@@ -1,4 +1,3 @@
-import type * as utils from '@iobroker/adapter-core';
 import type { HueResource } from './hue-v2-client';
 import type { HueDeviceResource, ResourceManager } from './resource-manager';
 
@@ -17,7 +16,7 @@ interface DeviceMetadata {
  * in common.name and can therefore change without changing ioBroker IDs.
  */
 export class ObjectManager {
-    public constructor(private readonly adapter: utils.Adapter) {}
+    public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async syncDevices(resources: ResourceManager): Promise<void> {
         await this.adapter.extendObjectAsync('devices', {
