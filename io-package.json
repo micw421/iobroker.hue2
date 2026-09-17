@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "hue2",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "titleLang": { "en": "Philips Hue v2", "de": "Philips Hue v2" },
     "desc": {
       "en": "Philips Hue adapter based exclusively on Hue API v2",
