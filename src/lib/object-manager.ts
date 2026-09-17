@@ -31,12 +31,20 @@ export class ObjectManager {
         for (const device of resources.getDevices()) {
             await this.syncDevice(device, resources.getDeviceServices(device));
         }
+        await this.updateAllEntertainmentStates(resources, true);
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
+        if (resource.type === 'entertainment_configuration') {
+            await this.updateAllEntertainmentStates(resources, false);
+            return;
+        }
         if (resource.type === 'device') {
             const device = resources.getDevice(resource.id);
-            if (device) await this.syncDevice(device, resources.getDeviceServices(device));
+            if (device) {
+                await this.syncDevice(device, resources.getDeviceServices(device));
+                await this.updateEntertainmentStateForDevice(resources, device, true);
+            }
             return;
         }
         const deviceId = resources.getDeviceIdForService(resource.id);
@@ -138,8 +146,6 @@ export class ObjectManager {
         const dimming = this.asRecord(resource.dimming);
         if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
 
-        // Hue may expose a supported capability without a current value. Create the
-        // writable states from property presence, just like grouped_light does.
         if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) {
             const colorTemperature = this.asRecord(resource.color_temperature);
             const schema = this.asRecord(colorTemperature?.mirek_schema);
@@ -156,6 +162,77 @@ export class ObjectManager {
             const value = typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '';
             await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value, resource, write: true });
         }
+    }
+
+    private async updateAllEntertainmentStates(resources: ResourceManager, createObjects: boolean): Promise<void> {
+        for (const device of resources.getDevices()) {
+            await this.updateEntertainmentStateForDevice(resources, device, createObjects);
+        }
+    }
+
+    private async updateEntertainmentStateForDevice(resources: ResourceManager, device: HueDeviceResource, createObject: boolean): Promise<void> {
+        const services = resources.getDeviceServices(device);
+        const light = services.find(service => service.type === 'light');
+        if (!light) return;
+
+        const active = this.isLightInActiveEntertainmentConfiguration(resources, light.id, services);
+        const id = `devices.${device.id}.entertainment_active`;
+
+        if (createObject) {
+            await this.adapter.extendObjectAsync(id, {
+                type: 'state',
+                common: {
+                    name: 'Entertainment active',
+                    type: 'boolean',
+                    role: 'indicator',
+                    read: true,
+                    write: false,
+                },
+                native: {
+                    hueDerivedFrom: 'entertainment_configuration',
+                    hueLightResourceId: light.id,
+                },
+            });
+        }
+        await this.adapter.setStateAsync(id, active, true);
+    }
+
+    private isLightInActiveEntertainmentConfiguration(resources: ResourceManager, lightId: string, deviceServices: HueResource[]): boolean {
+        const entertainmentServiceIds = new Set(
+            deviceServices.filter(service => service.type === 'entertainment').map(service => service.id),
+        );
+
+        for (const configuration of resources.getByType('entertainment_configuration')) {
+            if (configuration.status !== 'active') continue;
+
+            // Current Hue v2 resources provide direct references to the participating
+            // light services. Prefer those because they map exactly to our light state.
+            if (this.hasReference(configuration.light_services, lightId, 'light')) return true;
+
+            // Fallback for bridges/configurations where only entertainment channel
+            // member references are present.
+            if (this.containsEntertainmentServiceReference(configuration.channels, entertainmentServiceIds)) return true;
+        }
+        return false;
+    }
+
+    private hasReference(value: unknown, rid: string, rtype: string): boolean {
+        if (!Array.isArray(value)) return false;
+        return value.some(entry => {
+            const reference = this.asRecord(entry);
+            return reference?.rid === rid && reference?.rtype === rtype;
+        });
+    }
+
+    private containsEntertainmentServiceReference(value: unknown, serviceIds: Set<string>): boolean {
+        if (serviceIds.size === 0) return false;
+        if (Array.isArray(value)) return value.some(entry => this.containsEntertainmentServiceReference(entry, serviceIds));
+        const record = this.asRecord(value);
+        if (!record) return false;
+
+        const service = this.asRecord(record.service);
+        if (service?.rtype === 'entertainment' && typeof service.rid === 'string' && serviceIds.has(service.rid)) return true;
+        return Object.values(record).some(entry => this.containsEntertainmentServiceReference(entry, serviceIds));
     }
 
     private async syncMotionStates(baseId: string, resource: HueResource): Promise<void> { const motion = this.asRecord(resource.motion); if (typeof motion?.motion === 'boolean') await this.createState(`${baseId}.motion`, { name: 'Motion', type: 'boolean', role: 'sensor.motion', value: motion.motion, resource }); }
