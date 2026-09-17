@@ -19,6 +19,9 @@
     "connectionType": "local",
     "dataSource": "push",
     "enabled": true,
+    "adminUI": {
+      "config": "json"
+    },
     "extIcon": "https://raw.githubusercontent.com/micw421/iobroker.hue2/main/admin/hue2.png",
     "icon": "hue2.png",
     "messagebox": false,
