@@ -1,5 +1,6 @@
 import * as utils from '@iobroker/adapter-core';
 import { HueV2Client } from './lib/hue-v2-client';
+import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
 
 interface Hue2Config extends ioBroker.AdapterConfig {
@@ -10,12 +11,15 @@ interface Hue2Config extends ioBroker.AdapterConfig {
 class Hue2 extends utils.Adapter {
     private client?: HueV2Client;
     private resources?: ResourceManager;
+    private readonly objectManager: ObjectManager;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({
             ...options,
             name: 'hue2',
         });
+
+        this.objectManager = new ObjectManager(this);
 
         this.on('ready', this.onReady.bind(this));
         this.on('unload', this.onUnload.bind(this));
@@ -38,6 +42,8 @@ class Hue2 extends utils.Adapter {
         try {
             const resources = await this.client.getResources();
             this.resources = new ResourceManager(resources);
+
+            await this.objectManager.syncDevices(this.resources);
 
             await this.setState('info.connection', true, true);
             this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
