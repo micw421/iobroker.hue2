@@ -24,6 +24,7 @@ class Hue2 extends utils.Adapter {
         this.objectManager = new ObjectManager(this);
 
         this.on('ready', this.onReady.bind(this));
+        this.on('stateChange', this.onStateChange.bind(this));
         this.on('unload', this.onUnload.bind(this));
     }
 
@@ -46,6 +47,7 @@ class Hue2 extends utils.Adapter {
             this.resources = new ResourceManager(resources);
 
             await this.objectManager.syncDevices(this.resources);
+            this.subscribeStates('devices.*');
 
             await this.setState('info.connection', true, true);
             this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
@@ -81,6 +83,126 @@ class Hue2 extends utils.Adapter {
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
         this.log.debug(`Hue event update ${merged.type}: ${merged.id}`);
+    }
+
+    private async onStateChange(id: string, state: ioBroker.State | null | undefined): Promise<void> {
+        if (!state || state.ack || !this.client) {
+            return;
+        }
+
+        const prefix = `${this.namespace}.devices.`;
+        if (!id.startsWith(prefix)) {
+            return;
+        }
+
+        const relativeId = id.slice(`${this.namespace}.`.length);
+        const property = id.slice(id.lastIndexOf('.') + 1);
+        const object = await this.getObjectAsync(relativeId);
+        if (!object || object.type !== 'state') {
+            return;
+        }
+
+        const native = object.native as Record<string, unknown>;
+
+        try {
+            switch (property) {
+                case 'enabled':
+                    await this.writeEnabled(native, state.val);
+                    break;
+                case 'on':
+                    await this.writeSingleResource(native, { on: { on: this.requireBoolean(state.val, 'on') } });
+                    break;
+                case 'dimming': {
+                    const brightness = this.requireNumber(state.val, 'dimming');
+                    if (brightness < 0 || brightness > 100) {
+                        throw new Error('dimming must be between 0 and 100');
+                    }
+                    await this.writeSingleResource(native, { dimming: { brightness } });
+                    break;
+                }
+                case 'color_temperature':
+                    await this.writeSingleResource(native, {
+                        color_temperature: { mirek: this.requireNumber(state.val, 'color_temperature') },
+                    });
+                    break;
+                case 'color':
+                    await this.writeColor(native, state.val);
+                    break;
+                default:
+                    this.log.warn(`Ignoring write to unsupported Hue state ${id}`);
+                    return;
+            }
+
+            await this.setStateAsync(relativeId, state.val, true);
+            this.log.debug(`Wrote ${relativeId}=${String(state.val)} to Hue Bridge`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.log.warn(`Could not write ${relativeId} to Hue Bridge: ${message}`);
+        }
+    }
+
+    private async writeEnabled(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+        const enabled = this.requireBoolean(value, 'enabled');
+        const ids = this.asStringArray(native.hueResourceIds);
+        const types = this.asStringArray(native.hueResourceTypes);
+
+        if (ids.length === 0 || ids.length !== types.length) {
+            throw new Error('enabled state has no valid Hue resource mapping');
+        }
+
+        for (let i = 0; i < ids.length; i++) {
+            await this.client!.updateResource(types[i], ids[i], { enabled });
+        }
+    }
+
+    private async writeSingleResource(native: Record<string, unknown>, payload: Record<string, unknown>): Promise<void> {
+        const id = typeof native.hueResourceId === 'string' ? native.hueResourceId : undefined;
+        const type = typeof native.hueResourceType === 'string' ? native.hueResourceType : undefined;
+        if (!id || !type) {
+            throw new Error('state has no Hue resource mapping');
+        }
+        await this.client!.updateResource(type, id, payload);
+    }
+
+    private async writeColor(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+        if (typeof value !== 'string') {
+            throw new Error('color must be a JSON string with x and y');
+        }
+
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(value);
+        } catch {
+            throw new Error('color must be valid JSON');
+        }
+
+        const xy = this.asRecord(parsed);
+        if (typeof xy?.x !== 'number' || typeof xy?.y !== 'number') {
+            throw new Error('color must contain numeric x and y values');
+        }
+        if (xy.x < 0 || xy.x > 1 || xy.y < 0 || xy.y > 1) {
+            throw new Error('color x and y must be between 0 and 1');
+        }
+
+        await this.writeSingleResource(native, { color: { xy: { x: xy.x, y: xy.y } } });
+    }
+
+    private requireBoolean(value: ioBroker.StateValue, property: string): boolean {
+        if (typeof value !== 'boolean') {
+            throw new Error(`${property} must be boolean`);
+        }
+        return value;
+    }
+
+    private requireNumber(value: ioBroker.StateValue, property: string): number {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            throw new Error(`${property} must be a finite number`);
+        }
+        return value;
+    }
+
+    private asStringArray(value: unknown): string[] {
+        return Array.isArray(value) && value.every(entry => typeof entry === 'string') ? value : [];
     }
 
     private logResourceSummary(): void {
