@@ -90,6 +90,7 @@ class Hue2 extends utils.Adapter {
                 }
                 case 'color_temperature': await this.writeSingleResource(native, { color_temperature: { mirek: this.requireNumber(state.val, 'color_temperature') } }); break;
                 case 'color': await this.writeColor(native, state.val); break;
+                case 'command': await this.writeCommand(native, state.val); break;
                 case 'recall':
                     await this.recallScene(native, state.val);
                     await this.setStateAsync(relativeId, false, true);
@@ -103,6 +104,15 @@ class Hue2 extends utils.Adapter {
             const message = error instanceof Error ? error.message : String(error);
             this.log.warn(`Could not write ${relativeId} to Hue Bridge: ${message}`);
         }
+    }
+
+    private async writeCommand(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+        if (typeof value !== 'string') throw new Error('command must be a JSON string');
+        let parsed: unknown;
+        try { parsed = JSON.parse(value); } catch { throw new Error('command must be valid JSON'); }
+        const payload = this.asRecord(parsed);
+        if (!payload) throw new Error('command must contain a JSON object');
+        await this.writeSingleResource(native, payload);
     }
 
     private async recallScene(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
