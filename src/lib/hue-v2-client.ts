@@ -18,12 +18,7 @@ export interface HueV2ClientOptions {
     applicationKey: string;
 }
 
-/**
- * Minimal client for the Philips Hue CLIP API v2.
- *
- * The client deliberately exposes generic resources first. Typed resource
- * methods will be added as the adapter's domain model grows.
- */
+/** Minimal client for the Philips Hue CLIP API v2. */
 export class HueV2Client {
     private readonly baseUrl: string;
     private readonly http: AxiosInstance;
@@ -39,14 +34,24 @@ export class HueV2Client {
         });
     }
 
-    /** Get all resources known to the Hue Bridge. */
     public async getResources(): Promise<HueResource[]> {
         const response = await this.http.get<HueResponse<HueResource>>(`${this.baseUrl}/resource`);
-
-        if (response.data.errors.length > 0) {
-            throw new Error(response.data.errors.map(error => error.description).join('; '));
-        }
-
+        this.throwHueErrors(response.data.errors);
         return response.data.data;
+    }
+
+    /** Update one Hue v2 resource using its resource type and UUID. */
+    public async updateResource(type: string, id: string, payload: Record<string, unknown>): Promise<void> {
+        const response = await this.http.put<HueResponse<unknown>>(
+            `${this.baseUrl}/resource/${encodeURIComponent(type)}/${encodeURIComponent(id)}`,
+            payload,
+        );
+        this.throwHueErrors(response.data.errors);
+    }
+
+    private throwHueErrors(errors: Array<{ description: string }>): void {
+        if (errors.length > 0) {
+            throw new Error(errors.map(error => error.description).join('; '));
+        }
     }
 }
