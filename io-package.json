@@ -1,6 +1,6 @@
 {
   "common": {
-    "name": "hue2", "version": "0.0.9",
+    "name": "hue2", "version": "0.0.10",
     "titleLang": { "en": "Philips Hue v2", "de": "Philips Hue v2" },
     "desc": { "en": "Philips Hue adapter based exclusively on Hue API v2", "de": "Philips-Hue-Adapter ausschließlich auf Basis der Hue API v2" },
     "authors": ["micw421"], "license": "MIT", "platform": "Javascript/Node.js", "mode": "daemon", "type": "lighting", "compact": true,
