@@ -1,6 +1,6 @@
 {
   "name": "iobroker.hue2",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Philips Hue adapter for ioBroker based exclusively on Hue API v2",
   "author": "micw421",
   "license": "MIT",
