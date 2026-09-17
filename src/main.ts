@@ -1,4 +1,5 @@
 import * as utils from '@iobroker/adapter-core';
+import { GroupObjectManager } from './lib/group-object-manager';
 import { HueEventStream } from './lib/hue-event-stream';
 import { HueV2Client, type HueResource } from './lib/hue-v2-client';
 import { ObjectManager } from './lib/object-manager';
@@ -14,14 +15,13 @@ class Hue2 extends utils.Adapter {
     private eventStream?: HueEventStream;
     private resources?: ResourceManager;
     private readonly objectManager: ObjectManager;
+    private readonly groupObjectManager: GroupObjectManager;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
-        super({
-            ...options,
-            name: 'hue2',
-        });
+        super({ ...options, name: 'hue2' });
 
         this.objectManager = new ObjectManager(this);
+        this.groupObjectManager = new GroupObjectManager(this);
 
         this.on('ready', this.onReady.bind(this));
         this.on('stateChange', this.onStateChange.bind(this));
@@ -37,17 +37,19 @@ class Hue2 extends utils.Adapter {
             return;
         }
 
-        this.client = new HueV2Client({
-            address: config.bridge,
-            applicationKey: config.applicationKey,
-        });
+        this.client = new HueV2Client({ address: config.bridge, applicationKey: config.applicationKey });
 
         try {
             const resources = await this.client.getResources();
             this.resources = new ResourceManager(resources);
 
             await this.objectManager.syncDevices(this.resources);
+            await this.groupObjectManager.sync(this.resources);
+
             this.subscribeStates('devices.*');
+            this.subscribeStates('rooms.*');
+            this.subscribeStates('zones.*');
+            this.subscribeStates('scenes.*');
 
             await this.setState('info.connection', true, true);
             this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
@@ -62,10 +64,7 @@ class Hue2 extends utils.Adapter {
 
     private startEventStream(config: Hue2Config): void {
         this.eventStream?.stop();
-        this.eventStream = new HueEventStream({
-            address: config.bridge,
-            applicationKey: config.applicationKey,
-        });
+        this.eventStream = new HueEventStream({ address: config.bridge, applicationKey: config.applicationKey });
 
         this.eventStream.start({
             onConnected: () => this.log.info('Hue API v2 event stream connected'),
@@ -76,31 +75,26 @@ class Hue2 extends utils.Adapter {
     }
 
     private async handleResourceUpdate(update: HueResource): Promise<void> {
-        if (!this.resources) {
-            return;
-        }
+        if (!this.resources) return;
 
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
+        await this.groupObjectManager.updateResource(this.resources, merged);
         this.log.debug(`Hue event update ${merged.type}: ${merged.id}`);
     }
 
     private async onStateChange(id: string, state: ioBroker.State | null | undefined): Promise<void> {
-        if (!state || state.ack || !this.client) {
-            return;
-        }
+        if (!state || state.ack || !this.client) return;
 
-        const prefix = `${this.namespace}.devices.`;
-        if (!id.startsWith(prefix)) {
-            return;
-        }
+        const instancePrefix = `${this.namespace}.`;
+        if (!id.startsWith(instancePrefix)) return;
 
-        const relativeId = id.slice(`${this.namespace}.`.length);
+        const relativeId = id.slice(instancePrefix.length);
+        if (!['devices.', 'rooms.', 'zones.', 'scenes.'].some(prefix => relativeId.startsWith(prefix))) return;
+
         const property = id.slice(id.lastIndexOf('.') + 1);
         const object = await this.getObjectAsync(relativeId);
-        if (!object || object.type !== 'state') {
-            return;
-        }
+        if (!object || object.type !== 'state') return;
 
         const native = object.native as Record<string, unknown>;
 
@@ -114,9 +108,7 @@ class Hue2 extends utils.Adapter {
                     break;
                 case 'dimming': {
                     const brightness = this.requireNumber(state.val, 'dimming');
-                    if (brightness < 0 || brightness > 100) {
-                        throw new Error('dimming must be between 0 and 100');
-                    }
+                    if (brightness < 0 || brightness > 100) throw new Error('dimming must be between 0 and 100');
                     await this.writeSingleResource(native, { dimming: { brightness } });
                     break;
                 }
@@ -128,6 +120,11 @@ class Hue2 extends utils.Adapter {
                 case 'color':
                     await this.writeColor(native, state.val);
                     break;
+                case 'recall':
+                    await this.recallScene(native, state.val);
+                    await this.setStateAsync(relativeId, false, true);
+                    this.log.debug(`Recalled Hue scene ${relativeId}`);
+                    return;
                 default:
                     this.log.warn(`Ignoring write to unsupported Hue state ${id}`);
                     return;
@@ -139,6 +136,12 @@ class Hue2 extends utils.Adapter {
             const message = error instanceof Error ? error.message : String(error);
             this.log.warn(`Could not write ${relativeId} to Hue Bridge: ${message}`);
         }
+    }
+
+    private async recallScene(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+        const recall = this.requireBoolean(value, 'recall');
+        if (!recall) return;
+        await this.writeSingleResource(native, { recall: { action: 'active' } });
     }
 
     private async writeEnabled(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
@@ -158,16 +161,12 @@ class Hue2 extends utils.Adapter {
     private async writeSingleResource(native: Record<string, unknown>, payload: Record<string, unknown>): Promise<void> {
         const id = typeof native.hueResourceId === 'string' ? native.hueResourceId : undefined;
         const type = typeof native.hueResourceType === 'string' ? native.hueResourceType : undefined;
-        if (!id || !type) {
-            throw new Error('state has no Hue resource mapping');
-        }
+        if (!id || !type) throw new Error('state has no Hue resource mapping');
         await this.client!.updateResource(type, id, payload);
     }
 
     private async writeColor(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
-        if (typeof value !== 'string') {
-            throw new Error('color must be a JSON string with x and y');
-        }
+        if (typeof value !== 'string') throw new Error('color must be a JSON string with x and y');
 
         let parsed: unknown;
         try {
@@ -188,9 +187,7 @@ class Hue2 extends utils.Adapter {
     }
 
     private requireBoolean(value: ioBroker.StateValue, property: string): boolean {
-        if (typeof value !== 'boolean') {
-            throw new Error(`${property} must be boolean`);
-        }
+        if (typeof value !== 'boolean') throw new Error(`${property} must be boolean`);
         return value;
     }
 
@@ -206,45 +203,22 @@ class Hue2 extends utils.Adapter {
     }
 
     private logResourceSummary(): void {
-        if (!this.resources) {
-            return;
-        }
+        if (!this.resources) return;
 
         const counts = this.resources.getTypeCounts();
         const importantTypes = [
-            'device',
-            'light',
-            'grouped_light',
-            'motion',
-            'light_level',
-            'temperature',
-            'device_power',
-            'room',
-            'zone',
-            'scene',
-            'entertainment',
-            'entertainment_configuration',
+            'device', 'light', 'grouped_light', 'motion', 'light_level', 'temperature', 'device_power',
+            'room', 'zone', 'scene', 'entertainment', 'entertainment_configuration',
         ];
-
         const summary = importantTypes
             .filter(type => counts.has(type))
             .map(type => `${type}=${counts.get(type)}`)
             .join(', ');
-
         this.log.info(`Hue resource summary: ${summary}`);
-
-        for (const device of this.resources.getDevices()) {
-            const metadata = this.asRecord(device.metadata);
-            const name = typeof metadata?.name === 'string' ? metadata.name : device.id;
-            const serviceTypes = this.resources.getDeviceServices(device).map(service => service.type);
-            this.log.debug(`Hue device ${name} (${device.id}): ${serviceTypes.join(', ')}`);
-        }
     }
 
     private asRecord(value: unknown): Record<string, unknown> | undefined {
-        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-            return undefined;
-        }
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
         return value as Record<string, unknown>;
     }
 
