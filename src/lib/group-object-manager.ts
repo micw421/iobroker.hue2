@@ -1,151 +1,19 @@
 import type { HueResource } from './hue-v2-client';
 import type { HueResourceReference, ResourceManager } from './resource-manager';
 
-interface StateDefinition {
-    name: string;
-    type: ioBroker.CommonType;
-    role: string;
-    value: ioBroker.StateValue;
-    resource: HueResource;
-    unit?: string;
-    min?: number;
-    max?: number;
-    write?: boolean;
-}
+interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; unit?: string; min?: number; max?: number; write?: boolean; }
 
 /** Creates rooms and zones with their Hue API v2 scenes nested below the owning group. */
 export class GroupObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
-
-    public async sync(resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync('scenes', { recursive: true });
-        await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources);
-        await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources);
-    }
-
-    public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
-        if (resource.type !== 'grouped_light') return;
-        for (const [resourceType, root] of [['room', 'rooms'], ['zone', 'zones']] as const) {
-            for (const container of resources.getByType(resourceType)) {
-                if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) {
-                    await this.updateGroupedLightValues(`${root}.${container.id}`, resource);
-                }
-            }
-        }
-    }
-
-    private async syncGroupedContainerType(resourceType: 'room' | 'zone', root: 'rooms' | 'zones', rootName: string, resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync(root, { recursive: true });
-        await this.adapter.extendObjectAsync(root, { type: 'folder', common: { name: rootName }, native: {} });
-
-        for (const container of resources.getByType(resourceType)) {
-            const metadata = this.asRecord(container.metadata);
-            const name = this.asString(metadata?.name) ?? container.id;
-            const groupedLight = this.getServiceReferences(container)
-                .filter(reference => reference.rtype === 'grouped_light')
-                .map(reference => resources.getById(reference.rid))
-                .find((resource): resource is HueResource => resource !== undefined);
-
-            const baseId = `${root}.${container.id}`;
-            await this.adapter.extendObjectAsync(baseId, {
-                type: 'channel', common: { name },
-                native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id },
-            });
-            await this.createInfoState(`${baseId}.name`, 'Name', name);
-            if (groupedLight) {
-                await this.createState(`${baseId}.command`, {
-                    name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true,
-                });
-                await this.syncGroupedLightStates(baseId, groupedLight);
-            }
-            await this.syncScenesForGroup(baseId, container.id, container.type, resources);
-        }
-    }
-
-    private async syncScenesForGroup(baseId: string, groupId: string, groupType: string, resources: ResourceManager): Promise<void> {
-        const scenes = resources.getByType('scene').filter(scene => {
-            const group = this.asRecord(scene.group);
-            return this.asString(group?.rid) === groupId && this.asString(group?.rtype) === groupType;
-        });
-        if (scenes.length === 0) return;
-
-        await this.adapter.extendObjectAsync(`${baseId}.scenes`, { type: 'channel', common: { name: 'Scenes' }, native: {} });
-        for (const scene of scenes) {
-            const metadata = this.asRecord(scene.metadata);
-            const name = this.asString(metadata?.name) ?? scene.id;
-            const sceneBaseId = `${baseId}.scenes.${scene.id}`;
-            await this.adapter.extendObjectAsync(sceneBaseId, {
-                type: 'channel', common: { name },
-                native: { hueResourceId: scene.id, hueResourceType: scene.type, groupResourceId: groupId, groupResourceType: groupType },
-            });
-            await this.createInfoState(`${sceneBaseId}.name`, 'Name', name);
-            await this.createState(`${sceneBaseId}.recall`, { name: 'Recall', type: 'boolean', role: 'button', value: false, resource: scene, write: true });
-        }
-    }
-
-    private async syncGroupedLightStates(baseId: string, resource: HueResource): Promise<void> {
-        const on = this.asRecord(resource.on);
-        if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
-        const dimming = this.asRecord(resource.dimming);
-        if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
-
-        // grouped_light can expose color capabilities as empty objects when no single
-        // aggregate value is available. Presence of the property is enough to make
-        // the corresponding writable ioBroker state useful.
-        if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) {
-            const colorTemperature = this.asRecord(resource.color_temperature);
-            const schema = this.asRecord(colorTemperature?.mirek_schema);
-            const mirek = typeof colorTemperature?.mirek === 'number' ? colorTemperature.mirek : 0;
-            await this.createState(`${baseId}.color_temperature`, {
-                name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: mirek,
-                unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true,
-            });
-        }
-
-        if (Object.prototype.hasOwnProperty.call(resource, 'color')) {
-            const color = this.asRecord(resource.color);
-            const xy = this.asRecord(color?.xy);
-            const value = typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '';
-            await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value, resource, write: true });
-        }
-    }
-
-    private async updateGroupedLightValues(baseId: string, resource: HueResource): Promise<void> {
-        const on = this.asRecord(resource.on);
-        if (typeof on?.on === 'boolean') await this.adapter.setStateAsync(`${baseId}.on`, on.on, true);
-        const dimming = this.asRecord(resource.dimming);
-        if (typeof dimming?.brightness === 'number') await this.adapter.setStateAsync(`${baseId}.dimming`, dimming.brightness, true);
-        const colorTemperature = this.asRecord(resource.color_temperature);
-        if (typeof colorTemperature?.mirek === 'number') await this.adapter.setStateAsync(`${baseId}.color_temperature`, colorTemperature.mirek, true);
-        const color = this.asRecord(resource.color);
-        const xy = this.asRecord(color?.xy);
-        if (typeof xy?.x === 'number' && typeof xy?.y === 'number') await this.adapter.setStateAsync(`${baseId}.color`, JSON.stringify({ x: xy.x, y: xy.y }), true);
-    }
-
-    private async createState(id: string, definition: StateDefinition): Promise<void> {
-        const common: ioBroker.StateCommon = { name: definition.name, type: definition.type, role: definition.role, read: true, write: definition.write ?? false };
-        if (definition.unit !== undefined) common.unit = definition.unit;
-        if (definition.min !== undefined) common.min = definition.min;
-        if (definition.max !== undefined) common.max = definition.max;
-        await this.adapter.extendObjectAsync(id, { type: 'state', common, native: { hueResourceId: definition.resource.id, hueResourceType: definition.resource.type, idV1: definition.resource.id_v1 } });
-        await this.adapter.setStateAsync(id, definition.value, true);
-    }
-
-    private async createInfoState(id: string, name: string, value: string): Promise<void> {
-        await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: {} });
-        await this.adapter.setStateAsync(id, value, true);
-    }
-
-    private getServiceReferences(resource: HueResource): HueResourceReference[] {
-        if (!Array.isArray(resource.services)) return [];
-        return resource.services.filter((entry): entry is HueResourceReference => {
-            if (typeof entry !== 'object' || entry === null) return false;
-            const reference = entry as Record<string, unknown>;
-            return typeof reference.rid === 'string' && typeof reference.rtype === 'string';
-        });
-    }
-
-    private asRecord(value: unknown): Record<string, unknown> | undefined { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
-    private asString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
-    private asNumber(value: unknown): number | undefined { return typeof value === 'number' ? value : undefined; }
+    public async sync(resources: ResourceManager): Promise<void> { await this.adapter.delObjectAsync('scenes', { recursive: true }); await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources); await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources); }
+    public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> { if (resource.type !== 'grouped_light') return; for (const [type, root] of [['room','rooms'],['zone','zones']] as const) for (const c of resources.getByType(type)) if (this.getServiceReferences(c).some(r => r.rid === resource.id)) await this.updateGroupedLightValues(`${root}.${c.id}`, resource); }
+    private async syncGroupedContainerType(type:'room'|'zone', root:'rooms'|'zones', rootName:string, resources:ResourceManager):Promise<void>{ await this.adapter.delObjectAsync(root,{recursive:true}); await this.adapter.extendObjectAsync(root,{type:'folder',common:{name:rootName},native:{}}); for(const c of resources.getByType(type)){ const m=this.asRecord(c.metadata); const name=this.asString(m?.name)??c.id; const gl=this.getServiceReferences(c).filter(r=>r.rtype==='grouped_light').map(r=>resources.getById(r.rid)).find((r):r is HueResource=>r!==undefined); const base=`${root}.${c.id}`; await this.adapter.extendObjectAsync(base,{type:'channel',common:{name},native:{hueResourceId:c.id,hueResourceType:c.type,groupedLightResourceId:gl?.id}}); await this.createInfoState(`${base}.name`,'Name',name); if(gl){ await this.createState(`${base}.command`,{name:'Command',type:'string',role:'json',value:'',resource:gl,write:true}); await this.syncGroupedLightStates(base,gl);} await this.syncScenesForGroup(base,c.id,c.type,resources); } }
+    private async syncScenesForGroup(base:string,gid:string,gtype:string,resources:ResourceManager):Promise<void>{ const scenes=resources.getByType('scene').filter(s=>{const g=this.asRecord(s.group);return this.asString(g?.rid)===gid&&this.asString(g?.rtype)===gtype;}); if(!scenes.length)return; await this.adapter.extendObjectAsync(`${base}.scenes`,{type:'channel',common:{name:'Scenes'},native:{}}); for(const s of scenes){const m=this.asRecord(s.metadata);const name=this.asString(m?.name)??s.id;const b=`${base}.scenes.${s.id}`;await this.adapter.extendObjectAsync(b,{type:'channel',common:{name},native:{hueResourceId:s.id,hueResourceType:s.type,groupResourceId:gid,groupResourceType:gtype}});await this.createInfoState(`${b}.name`,'Name',name);await this.createState(`${b}.recall`,{name:'Recall',type:'boolean',role:'button',value:false,resource:s,write:true});}}
+    private async syncGroupedLightStates(base:string,r:HueResource):Promise<void>{ const on=this.asRecord(r.on);if(typeof on?.on==='boolean')await this.createState(`${base}.on`,{name:'On',type:'boolean',role:'switch',value:on.on,resource:r,write:true});const d=this.asRecord(r.dimming);if(typeof d?.brightness==='number')await this.createState(`${base}.dimming`,{name:'Dimming',type:'number',role:'level.dimmer',value:d.brightness,unit:'%',min:0,max:100,resource:r,write:true});if(Object.prototype.hasOwnProperty.call(r,'color_temperature')){const ct=this.asRecord(r.color_temperature);const s=this.asRecord(ct?.mirek_schema);await this.createState(`${base}.color_temperature`,{name:'Color temperature',type:'number',role:'level.color.temperature',value:typeof ct?.mirek==='number'?ct.mirek:undefined,unit:'mired',min:this.asNumber(s?.mirek_minimum),max:this.asNumber(s?.mirek_maximum),resource:r,write:true});}if(Object.prototype.hasOwnProperty.call(r,'color')){const c=this.asRecord(r.color);const xy=this.asRecord(c?.xy);await this.createState(`${base}.color`,{name:'Color',type:'string',role:'text',value:typeof xy?.x==='number'&&typeof xy?.y==='number'?JSON.stringify({x:xy.x,y:xy.y}):'',resource:r,write:true});}}
+    private async updateGroupedLightValues(base:string,r:HueResource):Promise<void>{const on=this.asRecord(r.on);if(typeof on?.on==='boolean')await this.adapter.setStateAsync(`${base}.on`,on.on,true);const d=this.asRecord(r.dimming);if(typeof d?.brightness==='number')await this.adapter.setStateAsync(`${base}.dimming`,d.brightness,true);const ct=this.asRecord(r.color_temperature);if(typeof ct?.mirek==='number')await this.adapter.setStateAsync(`${base}.color_temperature`,ct.mirek,true);const c=this.asRecord(r.color);const xy=this.asRecord(c?.xy);if(typeof xy?.x==='number'&&typeof xy?.y==='number')await this.adapter.setStateAsync(`${base}.color`,JSON.stringify({x:xy.x,y:xy.y}),true);}
+    private async createState(id:string,d:StateDefinition):Promise<void>{const common:ioBroker.StateCommon={name:d.name,type:d.type,role:d.role,read:true,write:d.write??false};if(d.unit!==undefined)common.unit=d.unit;if(d.min!==undefined)common.min=d.min;if(d.max!==undefined)common.max=d.max;await this.adapter.extendObjectAsync(id,{type:'state',common,native:{hueResourceId:d.resource.id,hueResourceType:d.resource.type,idV1:d.resource.id_v1}});if(d.value!==undefined)await this.adapter.setStateAsync(id,d.value,true);}
+    private async createInfoState(id:string,name:string,value:string):Promise<void>{await this.adapter.extendObjectAsync(id,{type:'state',common:{name,type:'string',role:'text',read:true,write:false},native:{}});await this.adapter.setStateAsync(id,value,true);}
+    private getServiceReferences(r:HueResource):HueResourceReference[]{if(!Array.isArray(r.services))return[];return r.services.filter((e):e is HueResourceReference=>{if(typeof e!=='object'||e===null)return false;const x=e as Record<string,unknown>;return typeof x.rid==='string'&&typeof x.rtype==='string';});}
+    private asRecord(v:unknown):Record<string,unknown>|undefined{return typeof v==='object'&&v!==null&&!Array.isArray(v)?v as Record<string,unknown>:undefined;} private asString(v:unknown):string|undefined{return typeof v==='string'?v:undefined;} private asNumber(v:unknown):number|undefined{return typeof v==='number'?v:undefined;}
 }
