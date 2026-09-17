@@ -1,18 +1,7 @@
 import type { HueResource } from './hue-v2-client';
 import type { HueResourceReference, ResourceManager } from './resource-manager';
 
-interface StateDefinition {
-    name: string;
-    type: ioBroker.CommonType;
-    role: string;
-    value?: ioBroker.StateValue;
-    resource: HueResource;
-    unit?: string;
-    min?: number;
-    max?: number;
-    write?: boolean;
-}
-
+interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; unit?: string; min?: number; max?: number; write?: boolean; }
 interface ColorTemperatureRange { min?: number; max?: number; }
 
 /** Creates rooms and zones with their Hue API v2 scenes nested below the owning group. */
@@ -26,18 +15,11 @@ export class GroupObjectManager {
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
-        if (resource.type === 'scene') {
-            await this.updateSceneStatus(resource);
-            await this.updateActiveScene(resources, resource);
-            return;
-        }
+        if (resource.type === 'scene') { await this.updateSceneStatus(resource); await this.updateActiveScene(resources, resource); return; }
+        if (resource.type === 'entertainment_configuration') { await this.updateAllGroupEntertainmentStates(resources); return; }
         if (resource.type !== 'grouped_light') return;
         for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) {
-            for (const container of resources.getByType(type)) {
-                if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) {
-                    await this.updateGroupedLightValues(`${root}.${container.id}`, resource);
-                }
-            }
+            for (const container of resources.getByType(type)) if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) await this.updateGroupedLightValues(`${root}.${container.id}`, resource);
         }
     }
 
@@ -45,17 +27,14 @@ export class GroupObjectManager {
         await this.adapter.delObjectAsync(root, { recursive: true });
         await this.adapter.extendObjectAsync(root, { type: 'folder', common: { name: rootName }, native: {} });
         for (const container of resources.getByType(type)) {
-            const metadata = this.asRecord(container.metadata);
-            const name = this.asString(metadata?.name) ?? container.id;
+            const metadata = this.asRecord(container.metadata); const name = this.asString(metadata?.name) ?? container.id;
             const groupedLight = this.getServiceReferences(container).filter(reference => reference.rtype === 'grouped_light').map(reference => resources.getById(reference.rid)).find((candidate): candidate is HueResource => candidate !== undefined);
             const baseId = `${root}.${container.id}`;
             await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id } });
             await this.createInfoState(`${baseId}.name`, 'Name', name);
             await this.createSimpleStringState(`${baseId}.active_scene`, 'Active scene', this.getActiveSceneName(resources, container.id, container.type));
-            if (groupedLight) {
-                await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true });
-                await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources));
-            }
+            if (this.groupHasEntertainmentCapability(container, resources)) await this.createDerivedBooleanState(`${baseId}.entertainment_active`, 'Entertainment active', this.isGroupEntertainmentActive(container, resources));
+            if (groupedLight) { await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true }); await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources)); }
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
     }
@@ -97,36 +76,72 @@ export class GroupObjectManager {
 
     private getSceneStatus(scene: HueResource): string | undefined { const status = this.asRecord(scene.status); return this.asString(status?.active); }
 
+    private getGroupDeviceIds(container: HueResource): string[] {
+        if (!Array.isArray(container.children)) return [];
+        return container.children.map(child => this.asRecord(child)).filter((ref): ref is Record<string, unknown> => ref !== undefined && ref.rtype === 'device' && typeof ref.rid === 'string').map(ref => ref.rid as string);
+    }
+
+    private getGroupEntertainmentTargets(container: HueResource, resources: ResourceManager): { lightIds: Set<string>; entertainmentIds: Set<string> } {
+        const lightIds = new Set<string>(); const entertainmentIds = new Set<string>();
+        for (const deviceId of this.getGroupDeviceIds(container)) for (const service of resources.getDeviceServices(deviceId)) {
+            if (service.type === 'light') lightIds.add(service.id);
+            if (service.type === 'entertainment') entertainmentIds.add(service.id);
+        }
+        return { lightIds, entertainmentIds };
+    }
+
+    private groupHasEntertainmentCapability(container: HueResource, resources: ResourceManager): boolean {
+        const targets = this.getGroupEntertainmentTargets(container, resources);
+        if (targets.entertainmentIds.size > 0) return true;
+        return resources.getByType('entertainment_configuration').some(config => this.configurationReferencesTargets(config, targets));
+    }
+
+    private isGroupEntertainmentActive(container: HueResource, resources: ResourceManager): boolean {
+        const targets = this.getGroupEntertainmentTargets(container, resources);
+        return resources.getByType('entertainment_configuration').some(config => config.status === 'active' && this.configurationReferencesTargets(config, targets));
+    }
+
+    private configurationReferencesTargets(config: HueResource, targets: { lightIds: Set<string>; entertainmentIds: Set<string> }): boolean {
+        const lightServices = Array.isArray(config.light_services) ? config.light_services : [];
+        if (lightServices.some(entry => { const ref = this.asRecord(entry); return ref?.rtype === 'light' && typeof ref.rid === 'string' && targets.lightIds.has(ref.rid); })) return true;
+        return this.containsEntertainmentServiceReference(config.channels, targets.entertainmentIds);
+    }
+
+    private containsEntertainmentServiceReference(value: unknown, ids: Set<string>): boolean {
+        if (ids.size === 0) return false;
+        if (Array.isArray(value)) return value.some(entry => this.containsEntertainmentServiceReference(entry, ids));
+        const record = this.asRecord(value); if (!record) return false;
+        const service = this.asRecord(record.service);
+        if (service?.rtype === 'entertainment' && typeof service.rid === 'string' && ids.has(service.rid)) return true;
+        return Object.values(record).some(entry => this.containsEntertainmentServiceReference(entry, ids));
+    }
+
+    private async updateAllGroupEntertainmentStates(resources: ResourceManager): Promise<void> {
+        for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) for (const container of resources.getByType(type)) {
+            if (!this.groupHasEntertainmentCapability(container, resources)) continue;
+            const id = `${root}.${container.id}.entertainment_active`;
+            const object = await this.adapter.getObjectAsync(id);
+            if (!object) await this.createDerivedBooleanState(id, 'Entertainment active', this.isGroupEntertainmentActive(container, resources));
+            else await this.adapter.setStateAsync(id, this.isGroupEntertainmentActive(container, resources), true);
+        }
+    }
+
     private getGroupColorTemperatureRange(container: HueResource, resources: ResourceManager): ColorTemperatureRange {
         const ranges: Array<{ min: number; max: number }> = [];
-        const children = Array.isArray(container.children) ? container.children : [];
-        for (const child of children) {
-            const reference = this.asRecord(child); const rid = this.asString(reference?.rid); const rtype = this.asString(reference?.rtype);
-            if (!rid || rtype !== 'device') continue;
-            for (const service of resources.getDeviceServices(rid)) {
-                if (service.type !== 'light') continue;
-                const colorTemperature = this.asRecord(service.color_temperature); const schema = this.asRecord(colorTemperature?.mirek_schema);
-                const min = this.asNumber(schema?.mirek_minimum); const max = this.asNumber(schema?.mirek_maximum);
-                if (min !== undefined && max !== undefined) ranges.push({ min, max });
-            }
+        for (const deviceId of this.getGroupDeviceIds(container)) for (const service of resources.getDeviceServices(deviceId)) {
+            if (service.type !== 'light') continue;
+            const colorTemperature = this.asRecord(service.color_temperature); const schema = this.asRecord(colorTemperature?.mirek_schema);
+            const min = this.asNumber(schema?.mirek_minimum); const max = this.asNumber(schema?.mirek_maximum); if (min !== undefined && max !== undefined) ranges.push({ min, max });
         }
         if (ranges.length === 0) return {};
-        const min = Math.max(...ranges.map(range => range.min));
-        const max = Math.min(...ranges.map(range => range.max));
-        return min <= max ? { min, max } : {};
+        const min = Math.max(...ranges.map(range => range.min)); const max = Math.min(...ranges.map(range => range.max)); return min <= max ? { min, max } : {};
     }
 
     private async syncGroupedLightStates(baseId: string, resource: HueResource, derivedRange: ColorTemperatureRange): Promise<void> {
         const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
         const dimming = this.asRecord(resource.dimming); if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
-        if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) {
-            const colorTemperature = this.asRecord(resource.color_temperature); const schema = this.asRecord(colorTemperature?.mirek_schema);
-            await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: typeof colorTemperature?.mirek === 'number' ? colorTemperature.mirek : undefined, unit: 'mired', min: this.asNumber(schema?.mirek_minimum) ?? derivedRange.min, max: this.asNumber(schema?.mirek_maximum) ?? derivedRange.max, resource, write: true });
-        }
-        if (Object.prototype.hasOwnProperty.call(resource, 'color')) {
-            const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy);
-            await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '', resource, write: true });
-        }
+        if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) { const colorTemperature = this.asRecord(resource.color_temperature); const schema = this.asRecord(colorTemperature?.mirek_schema); await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: typeof colorTemperature?.mirek === 'number' ? colorTemperature.mirek : undefined, unit: 'mired', min: this.asNumber(schema?.mirek_minimum) ?? derivedRange.min, max: this.asNumber(schema?.mirek_maximum) ?? derivedRange.max, resource, write: true }); }
+        if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '', resource, write: true }); }
     }
 
     private async updateGroupedLightValues(baseId: string, resource: HueResource): Promise<void> {
@@ -143,6 +158,7 @@ export class GroupObjectManager {
         if (definition.value !== undefined) await this.adapter.setStateAsync(id, definition.value, true);
     }
 
+    private async createDerivedBooleanState(id: string, name: string, value: boolean): Promise<void> { await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'boolean', role: 'indicator', read: true, write: false }, native: { hueDerivedFrom: 'entertainment_configuration' } }); await this.adapter.setStateAsync(id, value, true); }
     private async createSimpleStringState(id: string, name: string, value: string): Promise<void> { await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: {} }); await this.adapter.setStateAsync(id, value, true); }
     private async createInfoState(id: string, name: string, value: string): Promise<void> { await this.createSimpleStringState(id, name, value); }
     private getServiceReferences(resource: HueResource): HueResourceReference[] { if (!Array.isArray(resource.services)) return []; return resource.services.filter((entry): entry is HueResourceReference => { if (typeof entry !== 'object' || entry === null) return false; const reference = entry as Record<string, unknown>; return typeof reference.rid === 'string' && typeof reference.rtype === 'string'; }); }
