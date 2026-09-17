@@ -1,18 +1,15 @@
 import * as utils from '@iobroker/adapter-core';
-import { HueV2Client, type HueResource } from './lib/hue-v2-client';
+import { HueV2Client } from './lib/hue-v2-client';
+import { ResourceManager } from './lib/resource-manager';
 
 interface Hue2Config extends ioBroker.AdapterConfig {
     bridge: string;
     applicationKey: string;
 }
 
-interface HueResourceReference {
-    rid: string;
-    rtype: string;
-}
-
 class Hue2 extends utils.Adapter {
     private client?: HueV2Client;
+    private resources?: ResourceManager;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({
@@ -40,10 +37,11 @@ class Hue2 extends utils.Adapter {
 
         try {
             const resources = await this.client.getResources();
+            this.resources = new ResourceManager(resources);
 
             await this.setState('info.connection', true, true);
-            this.log.info(`Connected to Hue Bridge. Discovered ${resources.length} API v2 resources.`);
-            this.logResourceDiagnostics(resources);
+            this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
+            this.logResourceSummary();
         } catch (error) {
             await this.setState('info.connection', false, true);
             const message = error instanceof Error ? error.message : String(error);
@@ -51,36 +49,39 @@ class Hue2 extends utils.Adapter {
         }
     }
 
-    private logResourceDiagnostics(resources: HueResource[]): void {
-        const counts = new Map<string, number>();
-        const resourcesById = new Map(resources.map(resource => [resource.id, resource]));
-
-        for (const resource of resources) {
-            counts.set(resource.type, (counts.get(resource.type) ?? 0) + 1);
+    private logResourceSummary(): void {
+        if (!this.resources) {
+            return;
         }
 
-        this.log.info('Hue API v2 resource summary:');
-        for (const [type, count] of [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-            this.log.info(`  ${type}: ${count}`);
-        }
+        const counts = this.resources.getTypeCounts();
+        const importantTypes = [
+            'device',
+            'light',
+            'grouped_light',
+            'motion',
+            'light_level',
+            'temperature',
+            'device_power',
+            'room',
+            'zone',
+            'scene',
+            'entertainment',
+            'entertainment_configuration',
+        ];
 
-        const devices = resources.filter(resource => resource.type === 'device');
-        this.log.info(`Hue API v2 device/service summary (${devices.length} devices):`);
+        const summary = importantTypes
+            .filter(type => counts.has(type))
+            .map(type => `${type}=${counts.get(type)}`)
+            .join(', ');
 
-        for (const device of devices) {
+        this.log.info(`Hue resource summary: ${summary}`);
+
+        for (const device of this.resources.getDevices()) {
             const metadata = this.asRecord(device.metadata);
-            const productData = this.asRecord(device.product_data);
-            const name = typeof metadata?.name === 'string' ? metadata.name : '<unnamed>';
-            const model = typeof productData?.model_id === 'string' ? productData.model_id : 'unknown model';
-            const services = this.asResourceReferences(device.services);
-
-            this.log.info(`  Device ${device.id}: ${name} (${model})`);
-
-            for (const service of services) {
-                const resource = resourcesById.get(service.rid);
-                const v1 = resource?.id_v1 ? `, v1=${resource.id_v1}` : '';
-                this.log.info(`    ${service.rtype}: ${service.rid}${v1}`);
-            }
+            const name = typeof metadata?.name === 'string' ? metadata.name : device.id;
+            const serviceTypes = this.resources.getDeviceServices(device).map(service => service.type);
+            this.log.debug(`Hue device ${name} (${device.id}): ${serviceTypes.join(', ')}`);
         }
     }
 
@@ -89,20 +90,6 @@ class Hue2 extends utils.Adapter {
             return undefined;
         }
         return value as Record<string, unknown>;
-    }
-
-    private asResourceReferences(value: unknown): HueResourceReference[] {
-        if (!Array.isArray(value)) {
-            return [];
-        }
-
-        return value.filter((entry): entry is HueResourceReference => {
-            if (typeof entry !== 'object' || entry === null) {
-                return false;
-            }
-            const reference = entry as Record<string, unknown>;
-            return typeof reference.rid === 'string' && typeof reference.rtype === 'string';
-        });
     }
 
     private onUnload(callback: () => void): void {
