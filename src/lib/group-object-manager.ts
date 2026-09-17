@@ -3,7 +3,6 @@ import type { HueResourceReference, ResourceManager } from './resource-manager';
 
 interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; unit?: string; min?: number; max?: number; write?: boolean; }
 interface ColorTemperatureRange { min?: number; max?: number; }
-interface GroupOnState { anyOn: boolean; allOn: boolean; }
 
 /** Creates rooms and zones with their Hue API v2 scenes nested below the owning group. */
 export class GroupObjectManager {
@@ -18,7 +17,7 @@ export class GroupObjectManager {
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
         if (resource.type === 'scene') { await this.updateSceneStatus(resource); await this.updateActiveScene(resources, resource); return; }
         if (resource.type === 'entertainment_configuration') { await this.updateAllGroupEntertainmentStates(resources); return; }
-        if (resource.type === 'light') { await this.updateAllGroupOnStates(resources); return; }
+        if (resource.type === 'light') { await this.updateAllGroupAllOnStates(resources); return; }
         if (resource.type !== 'grouped_light') return;
         for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) for (const container of resources.getByType(type)) if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) await this.updateGroupedLightValues(`${root}.${container.id}`, resource);
     }
@@ -33,8 +32,8 @@ export class GroupObjectManager {
             await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id } });
             await this.createInfoState(`${baseId}.name`, 'Name', name);
             await this.createSimpleStringState(`${baseId}.active_scene`, 'Active scene', this.getActiveSceneName(resources, container.id, container.type));
-            const onState = this.getGroupOnState(container, resources);
-            if (onState) { await this.createDerivedBooleanState(`${baseId}.any_on`, 'Any on', onState.anyOn, 'member_lights'); await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', onState.allOn, 'member_lights'); }
+            const allOn = this.getGroupAllOn(container, resources);
+            if (allOn !== undefined) await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', allOn, 'member_lights');
             if (this.groupHasEntertainmentCapability(container, resources)) await this.createDerivedBooleanState(`${baseId}.entertainment_active`, 'Entertainment active', this.isGroupEntertainmentActive(container, resources), 'entertainment_configuration');
             if (groupedLight) { await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true }); await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources)); }
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
@@ -91,14 +90,13 @@ export class GroupObjectManager {
         return lights;
     }
 
-    private getGroupOnState(container: HueResource, resources: ResourceManager): GroupOnState | undefined {
+    private getGroupAllOn(container: HueResource, resources: ResourceManager): boolean | undefined {
         const values = this.getGroupLights(container, resources).map(light => this.asRecord(light.on)?.on).filter((value): value is boolean => typeof value === 'boolean');
-        if (values.length === 0) return undefined;
-        return { anyOn: values.some(Boolean), allOn: values.every(Boolean) };
+        return values.length > 0 ? values.every(Boolean) : undefined;
     }
 
-    private async updateAllGroupOnStates(resources: ResourceManager): Promise<void> {
-        for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) for (const container of resources.getByType(type)) { const state = this.getGroupOnState(container, resources); if (!state) continue; await this.adapter.setStateAsync(`${root}.${container.id}.any_on`, state.anyOn, true); await this.adapter.setStateAsync(`${root}.${container.id}.all_on`, state.allOn, true); }
+    private async updateAllGroupAllOnStates(resources: ResourceManager): Promise<void> {
+        for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) for (const container of resources.getByType(type)) { const allOn = this.getGroupAllOn(container, resources); if (allOn === undefined) continue; await this.adapter.setStateAsync(`${root}.${container.id}.all_on`, allOn, true); }
     }
 
     private getGroupEntertainmentTargets(container: HueResource, resources: ResourceManager): { lightIds: Set<string>; entertainmentIds: Set<string> } {
