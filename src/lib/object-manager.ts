@@ -20,14 +20,11 @@ interface StateDefinition {
     max?: number;
 }
 
-/** Creates a flat ioBroker device model while retaining Hue v2 resource IDs in native. */
+/** Creates and updates the flat ioBroker device model for Hue v2 resources. */
 export class ObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async syncDevices(resources: ResourceManager): Promise<void> {
-        // The complete devices tree is adapter-owned and reconstructed from the
-        // current Hue v2 snapshot. This also removes obsolete service-UUID
-        // channels from older object-model versions and devices removed in Hue.
         await this.adapter.delObjectAsync('devices', { recursive: true });
 
         await this.adapter.extendObjectAsync('devices', {
@@ -38,6 +35,29 @@ export class ObjectManager {
 
         for (const device of resources.getDevices()) {
             await this.syncDevice(device, resources.getDeviceServices(device));
+        }
+    }
+
+    /** Apply one already-merged Hue v2 resource update to the flat ioBroker states. */
+    public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
+        if (resource.type === 'device') {
+            const device = resources.getDevice(resource.id);
+            if (device) {
+                await this.syncDevice(device, resources.getDeviceServices(device));
+            }
+            return;
+        }
+
+        const deviceId = resources.getDeviceIdForService(resource.id);
+        if (!deviceId) {
+            return;
+        }
+
+        const baseId = `devices.${deviceId}`;
+        await this.updateServiceStateValues(baseId, resource);
+
+        if (typeof resource.enabled === 'boolean') {
+            await this.updateEnabledState(baseId, resources.getDeviceServices(deviceId));
         }
     }
 
@@ -89,6 +109,64 @@ export class ObjectManager {
             case 'device_power': await this.syncDevicePowerStates(baseId, resource); break;
             case 'zigbee_connectivity': await this.syncZigbeeConnectivityStates(baseId, resource); break;
         }
+    }
+
+    private async updateServiceStateValues(baseId: string, resource: HueResource): Promise<void> {
+        switch (resource.type) {
+            case 'light': {
+                const on = this.asRecord(resource.on);
+                if (typeof on?.on === 'boolean') await this.adapter.setStateAsync(`${baseId}.on`, on.on, true);
+
+                const dimming = this.asRecord(resource.dimming);
+                if (typeof dimming?.brightness === 'number') await this.adapter.setStateAsync(`${baseId}.dimming`, dimming.brightness, true);
+
+                const colorTemperature = this.asRecord(resource.color_temperature);
+                if (typeof colorTemperature?.mirek === 'number') await this.adapter.setStateAsync(`${baseId}.color_temperature`, colorTemperature.mirek, true);
+
+                const color = this.asRecord(resource.color);
+                const xy = this.asRecord(color?.xy);
+                if (typeof xy?.x === 'number' && typeof xy?.y === 'number') {
+                    await this.adapter.setStateAsync(`${baseId}.color`, JSON.stringify({ x: xy.x, y: xy.y }), true);
+                }
+                break;
+            }
+            case 'motion': {
+                const motion = this.asRecord(resource.motion);
+                if (typeof motion?.motion === 'boolean') await this.adapter.setStateAsync(`${baseId}.motion`, motion.motion, true);
+                break;
+            }
+            case 'temperature': {
+                const temperature = this.asRecord(resource.temperature);
+                if (typeof temperature?.temperature === 'number') await this.adapter.setStateAsync(`${baseId}.temperature`, temperature.temperature, true);
+                break;
+            }
+            case 'light_level': {
+                const light = this.asRecord(resource.light);
+                if (typeof light?.light_level === 'number') await this.adapter.setStateAsync(`${baseId}.light_level`, light.light_level, true);
+                break;
+            }
+            case 'device_power': {
+                const powerState = this.asRecord(resource.power_state);
+                if (typeof powerState?.battery_level === 'number') await this.adapter.setStateAsync(`${baseId}.battery_level`, powerState.battery_level, true);
+                if (typeof powerState?.battery_state === 'string') await this.adapter.setStateAsync(`${baseId}.battery_state`, powerState.battery_state, true);
+                break;
+            }
+            case 'zigbee_connectivity':
+                if (typeof resource.status === 'string') await this.adapter.setStateAsync(`${baseId}.status`, resource.status, true);
+                break;
+        }
+    }
+
+    private async updateEnabledState(baseId: string, services: HueResource[]): Promise<void> {
+        const enabledServices = services.filter(service => typeof service.enabled === 'boolean');
+        if (enabledServices.length === 0) {
+            return;
+        }
+        await this.adapter.setStateAsync(
+            `${baseId}.enabled`,
+            enabledServices.every(service => service.enabled === true),
+            true,
+        );
     }
 
     private async syncLightStates(baseId: string, resource: HueResource): Promise<void> {
