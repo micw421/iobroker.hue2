@@ -137,14 +137,25 @@ export class ObjectManager {
         if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
         const dimming = this.asRecord(resource.dimming);
         if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
-        const colorTemperature = this.asRecord(resource.color_temperature);
-        if (typeof colorTemperature?.mirek === 'number') {
-            const schema = this.asRecord(colorTemperature.mirek_schema);
-            await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: colorTemperature.mirek, unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true });
+
+        // Hue may expose a supported capability without a current value. Create the
+        // writable states from property presence, just like grouped_light does.
+        if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) {
+            const colorTemperature = this.asRecord(resource.color_temperature);
+            const schema = this.asRecord(colorTemperature?.mirek_schema);
+            const mirek = typeof colorTemperature?.mirek === 'number' ? colorTemperature.mirek : 0;
+            await this.createState(`${baseId}.color_temperature`, {
+                name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: mirek,
+                unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true,
+            });
         }
-        const color = this.asRecord(resource.color);
-        const xy = this.asRecord(color?.xy);
-        if (typeof xy?.x === 'number' && typeof xy?.y === 'number') await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: JSON.stringify({ x: xy.x, y: xy.y }), resource, write: true });
+
+        if (Object.prototype.hasOwnProperty.call(resource, 'color')) {
+            const color = this.asRecord(resource.color);
+            const xy = this.asRecord(color?.xy);
+            const value = typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '';
+            await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value, resource, write: true });
+        }
     }
 
     private async syncMotionStates(baseId: string, resource: HueResource): Promise<void> { const motion = this.asRecord(resource.motion); if (typeof motion?.motion === 'boolean') await this.createState(`${baseId}.motion`, { name: 'Motion', type: 'boolean', role: 'sensor.motion', value: motion.motion, resource }); }
