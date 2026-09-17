@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "hue2",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "titleLang": {
       "en": "Philips Hue v2",
       "de": "Philips Hue v2"
