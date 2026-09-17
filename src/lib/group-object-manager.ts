@@ -18,7 +18,6 @@ export class GroupObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async sync(resources: ResourceManager): Promise<void> {
-        // Remove the old top-level scene layout from 0.0.7.
         await this.adapter.delObjectAsync('scenes', { recursive: true });
         await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources);
         await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources);
@@ -26,7 +25,6 @@ export class GroupObjectManager {
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
         if (resource.type !== 'grouped_light') return;
-
         for (const [resourceType, root] of [['room', 'rooms'], ['zone', 'zones']] as const) {
             for (const container of resources.getByType(resourceType)) {
                 if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) {
@@ -36,12 +34,7 @@ export class GroupObjectManager {
         }
     }
 
-    private async syncGroupedContainerType(
-        resourceType: 'room' | 'zone',
-        root: 'rooms' | 'zones',
-        rootName: string,
-        resources: ResourceManager,
-    ): Promise<void> {
+    private async syncGroupedContainerType(resourceType: 'room' | 'zone', root: 'rooms' | 'zones', rootName: string, resources: ResourceManager): Promise<void> {
         await this.adapter.delObjectAsync(root, { recursive: true });
         await this.adapter.extendObjectAsync(root, { type: 'folder', common: { name: rootName }, native: {} });
 
@@ -59,7 +52,12 @@ export class GroupObjectManager {
                 native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id },
             });
             await this.createInfoState(`${baseId}.name`, 'Name', name);
-            if (groupedLight) await this.syncGroupedLightStates(baseId, groupedLight);
+            if (groupedLight) {
+                await this.createState(`${baseId}.command`, {
+                    name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true,
+                });
+                await this.syncGroupedLightStates(baseId, groupedLight);
+            }
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
     }
@@ -71,10 +69,7 @@ export class GroupObjectManager {
         });
         if (scenes.length === 0) return;
 
-        await this.adapter.extendObjectAsync(`${baseId}.scenes`, {
-            type: 'channel', common: { name: 'Scenes' }, native: {},
-        });
-
+        await this.adapter.extendObjectAsync(`${baseId}.scenes`, { type: 'channel', common: { name: 'Scenes' }, native: {} });
         for (const scene of scenes) {
             const metadata = this.asRecord(scene.metadata);
             const name = this.asString(metadata?.name) ?? scene.id;
@@ -84,9 +79,7 @@ export class GroupObjectManager {
                 native: { hueResourceId: scene.id, hueResourceType: scene.type, groupResourceId: groupId, groupResourceType: groupType },
             });
             await this.createInfoState(`${sceneBaseId}.name`, 'Name', name);
-            await this.createState(`${sceneBaseId}.recall`, {
-                name: 'Recall', type: 'boolean', role: 'button', value: false, resource: scene, write: true,
-            });
+            await this.createState(`${sceneBaseId}.recall`, { name: 'Recall', type: 'boolean', role: 'button', value: false, resource: scene, write: true });
         }
     }
 
