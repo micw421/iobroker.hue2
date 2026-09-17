@@ -24,6 +24,7 @@ class Hue2 extends utils.Adapter {
     }
 
     private async onReady(): Promise<void> {
+        await this.ensureInfoObjects();
         const config = this.config as Hue2Config;
         if (!config.bridge || !config.applicationKey) {
             this.log.warn('Hue Bridge address or application key is missing');
@@ -48,6 +49,26 @@ class Hue2 extends utils.Adapter {
             const message = error instanceof Error ? error.message : String(error);
             this.log.error(`Could not connect to Hue Bridge: ${message}`);
         }
+    }
+
+    private async ensureInfoObjects(): Promise<void> {
+        await this.extendObjectAsync('info', {
+            type: 'channel',
+            common: { name: 'Information' },
+            native: {},
+        });
+        await this.extendObjectAsync('info.connection', {
+            type: 'state',
+            common: {
+                name: 'Connected to Hue Bridge',
+                type: 'boolean',
+                role: 'indicator.connected',
+                read: true,
+                write: false,
+                def: false,
+            },
+            native: {},
+        });
     }
 
     private startEventStream(config: Hue2Config): void {
