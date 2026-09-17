@@ -1,49 +1,16 @@
 {
   "common": {
-    "name": "hue2",
-    "version": "0.0.7",
+    "name": "hue2", "version": "0.0.8",
     "titleLang": { "en": "Philips Hue v2", "de": "Philips Hue v2" },
-    "desc": {
-      "en": "Philips Hue adapter based exclusively on Hue API v2",
-      "de": "Philips-Hue-Adapter ausschließlich auf Basis der Hue API v2"
-    },
-    "authors": ["micw421"],
-    "license": "MIT",
-    "platform": "Javascript/Node.js",
-    "mode": "daemon",
-    "type": "lighting",
-    "compact": true,
-    "connectionType": "local",
-    "dataSource": "push",
-    "enabled": true,
-    "adminUI": { "config": "json" },
-    "extIcon": "https://raw.githubusercontent.com/micw421/iobroker.hue2/main/admin/hue2.png",
-    "icon": "hue2.png",
-    "messagebox": false,
-    "loglevel": "info",
-    "dependencies": [{ "js-controller": ">=6.0.0" }],
-    "globalDependencies": [{ "admin": ">=7.0.0" }]
+    "desc": { "en": "Philips Hue adapter based exclusively on Hue API v2", "de": "Philips-Hue-Adapter ausschließlich auf Basis der Hue API v2" },
+    "authors": ["micw421"], "license": "MIT", "platform": "Javascript/Node.js", "mode": "daemon", "type": "lighting", "compact": true,
+    "connectionType": "local", "dataSource": "push", "enabled": true, "adminUI": { "config": "json" },
+    "extIcon": "https://raw.githubusercontent.com/micw421/iobroker.hue2/main/admin/hue2.png", "icon": "hue2.png", "messagebox": false, "loglevel": "info",
+    "dependencies": [{ "js-controller": ">=6.0.0" }], "globalDependencies": [{ "admin": ">=7.0.0" }]
   },
   "native": { "bridge": "", "applicationKey": "" },
   "objects": [
-    {
-      "_id": "info",
-      "type": "channel",
-      "common": { "name": "Information" },
-      "native": {}
-    },
-    {
-      "_id": "info.connection",
-      "type": "state",
-      "common": {
-        "name": "Connected to Hue Bridge",
-        "type": "boolean",
-        "role": "indicator.connected",
-        "read": true,
-        "write": false,
-        "def": false
-      },
-      "native": {}
-    }
+    { "_id": "info", "type": "channel", "common": { "name": "Information" }, "native": {} },
+    { "_id": "info.connection", "type": "state", "common": { "name": "Connected to Hue Bridge", "type": "boolean", "role": "indicator.connected", "read": true, "write": false, "def": false }, "native": {} }
   ]
 }
