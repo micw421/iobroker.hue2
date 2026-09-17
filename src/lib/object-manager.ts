@@ -25,6 +25,11 @@ export class ObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async syncDevices(resources: ResourceManager): Promise<void> {
+        // The complete devices tree is adapter-owned and reconstructed from the
+        // current Hue v2 snapshot. This also removes obsolete service-UUID
+        // channels from older object-model versions and devices removed in Hue.
+        await this.adapter.delObjectAsync('devices', { recursive: true });
+
         await this.adapter.extendObjectAsync('devices', {
             type: 'folder',
             common: { name: 'Hue devices' },
