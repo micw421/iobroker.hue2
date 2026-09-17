@@ -1,11 +1,8 @@
 {
   "common": {
     "name": "hue2",
-    "version": "0.0.3",
-    "titleLang": {
-      "en": "Philips Hue v2",
-      "de": "Philips Hue v2"
-    },
+    "version": "0.0.4",
+    "titleLang": { "en": "Philips Hue v2", "de": "Philips Hue v2" },
     "desc": {
       "en": "Philips Hue adapter based exclusively on Hue API v2",
       "de": "Philips-Hue-Adapter ausschließlich auf Basis der Hue API v2"
@@ -19,35 +16,20 @@
     "connectionType": "local",
     "dataSource": "push",
     "enabled": true,
-    "adminUI": {
-      "config": "json"
-    },
+    "adminUI": { "config": "json" },
     "extIcon": "https://raw.githubusercontent.com/micw421/iobroker.hue2/main/admin/hue2.png",
     "icon": "hue2.png",
     "messagebox": false,
     "loglevel": "info",
-    "dependencies": [
-      {
-        "js-controller": ">=6.0.0"
-      }
-    ],
-    "globalDependencies": [
-      {
-        "admin": ">=7.0.0"
-      }
-    ]
+    "dependencies": [{ "js-controller": ">=6.0.0" }],
+    "globalDependencies": [{ "admin": ">=7.0.0" }]
   },
-  "native": {
-    "bridge": "",
-    "applicationKey": ""
-  },
+  "native": { "bridge": "", "applicationKey": "" },
   "objects": [
     {
       "_id": "info",
       "type": "channel",
-      "common": {
-        "name": "Information"
-      },
+      "common": { "name": "Information" },
       "native": {}
     },
     {
