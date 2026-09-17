@@ -46,6 +46,16 @@ export class GroupObjectManager {
                 .map(reference => resources.getById(reference.rid))
                 .find((resource): resource is HueResource => resource !== undefined);
 
+            if (groupedLight) {
+                this.adapter.log.debug(
+                    `Hue ${resourceType} "${name}" (${container.id}) grouped_light: ${JSON.stringify(groupedLight)}`,
+                );
+            } else {
+                this.adapter.log.debug(
+                    `Hue ${resourceType} "${name}" (${container.id}) has no grouped_light resource`,
+                );
+            }
+
             const baseId = `${root}.${container.id}`;
             await this.adapter.extendObjectAsync(baseId, {
                 type: 'channel', common: { name },
