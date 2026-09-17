@@ -15,6 +15,7 @@ interface StateDefinition {
     role: string;
     value: ioBroker.StateValue;
     resource: HueResource;
+    write?: boolean;
     unit?: string;
     min?: number;
     max?: number;
@@ -88,7 +89,7 @@ export class ObjectManager {
             const enabled = enabledServices.every(service => service.enabled === true);
             await this.createState(`${baseId}.enabled`, {
                 name: 'Enabled', type: 'boolean', role: 'switch.enable', value: enabled,
-                resource: enabledServices[0],
+                resource: enabledServices[0], write: true,
             }, {
                 hueResourceIds: enabledServices.map(service => service.id),
                 hueResourceTypes: enabledServices.map(service => service.type),
@@ -172,24 +173,24 @@ export class ObjectManager {
     private async syncLightStates(baseId: string, resource: HueResource): Promise<void> {
         const on = this.asRecord(resource.on);
         if (typeof on?.on === 'boolean') {
-            await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource });
+            await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
         }
 
         const dimming = this.asRecord(resource.dimming);
         if (typeof dimming?.brightness === 'number') {
-            await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource });
+            await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
         }
 
         const colorTemperature = this.asRecord(resource.color_temperature);
         if (typeof colorTemperature?.mirek === 'number') {
             const schema = this.asRecord(colorTemperature.mirek_schema);
-            await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: colorTemperature.mirek, unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource });
+            await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: colorTemperature.mirek, unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true });
         }
 
         const color = this.asRecord(resource.color);
         const xy = this.asRecord(color?.xy);
         if (typeof xy?.x === 'number' && typeof xy?.y === 'number') {
-            await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: JSON.stringify({ x: xy.x, y: xy.y }), resource });
+            await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: JSON.stringify({ x: xy.x, y: xy.y }), resource, write: true });
         }
     }
 
@@ -231,7 +232,13 @@ export class ObjectManager {
     }
 
     private async createState(id: string, definition: StateDefinition, nativeExtra: Record<string, unknown> = {}): Promise<void> {
-        const common: ioBroker.StateCommon = { name: definition.name, type: definition.type, role: definition.role, read: true, write: false };
+        const common: ioBroker.StateCommon = {
+            name: definition.name,
+            type: definition.type,
+            role: definition.role,
+            read: true,
+            write: definition.write ?? false,
+        };
         if (definition.unit !== undefined) common.unit = definition.unit;
         if (definition.min !== undefined) common.min = definition.min;
         if (definition.max !== undefined) common.max = definition.max;
