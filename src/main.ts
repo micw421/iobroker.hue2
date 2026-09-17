@@ -1,5 +1,6 @@
 import * as utils from '@iobroker/adapter-core';
-import { HueV2Client } from './lib/hue-v2-client';
+import { HueEventStream } from './lib/hue-event-stream';
+import { HueV2Client, type HueResource } from './lib/hue-v2-client';
 import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
 
@@ -10,6 +11,7 @@ interface Hue2Config extends ioBroker.AdapterConfig {
 
 class Hue2 extends utils.Adapter {
     private client?: HueV2Client;
+    private eventStream?: HueEventStream;
     private resources?: ResourceManager;
     private readonly objectManager: ObjectManager;
 
@@ -48,11 +50,37 @@ class Hue2 extends utils.Adapter {
             await this.setState('info.connection', true, true);
             this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
             this.logResourceSummary();
+            this.startEventStream(config);
         } catch (error) {
             await this.setState('info.connection', false, true);
             const message = error instanceof Error ? error.message : String(error);
             this.log.error(`Could not connect to Hue Bridge: ${message}`);
         }
+    }
+
+    private startEventStream(config: Hue2Config): void {
+        this.eventStream?.stop();
+        this.eventStream = new HueEventStream({
+            address: config.bridge,
+            applicationKey: config.applicationKey,
+        });
+
+        this.eventStream.start({
+            onConnected: () => this.log.info('Hue API v2 event stream connected'),
+            onDisconnected: () => this.log.debug('Hue API v2 event stream disconnected; reconnect scheduled'),
+            onError: error => this.log.warn(`Hue event stream: ${error.message}`),
+            onUpdate: update => this.handleResourceUpdate(update),
+        });
+    }
+
+    private async handleResourceUpdate(update: HueResource): Promise<void> {
+        if (!this.resources) {
+            return;
+        }
+
+        const merged = this.resources.patch(update);
+        await this.objectManager.updateResource(this.resources, merged);
+        this.log.debug(`Hue event update ${merged.type}: ${merged.id}`);
     }
 
     private logResourceSummary(): void {
@@ -99,6 +127,7 @@ class Hue2 extends utils.Adapter {
     }
 
     private onUnload(callback: () => void): void {
+        this.eventStream?.stop();
         callback();
     }
 }
