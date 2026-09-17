@@ -1,6 +1,6 @@
 {
   "name": "iobroker.hue2",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Philips Hue adapter for ioBroker based exclusively on Hue API v2",
   "author": "micw421",
   "license": "MIT",
@@ -9,17 +9,9 @@
     "type": "git",
     "url": "https://github.com/micw421/iobroker.hue2.git"
   },
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "main": "build/main.js",
-  "files": [
-    "admin/",
-    "build/",
-    "io-package.json",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["admin/", "build/", "io-package.json", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
