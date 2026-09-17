@@ -1,0 +1,17 @@
+{
+  "type": "panel",
+  "items": {
+    "bridge": {
+      "type": "text",
+      "label": "Hue Bridge IP address",
+      "help": "IP address or hostname of the Philips Hue Bridge",
+      "newLine": true
+    },
+    "applicationKey": {
+      "type": "password",
+      "label": "Hue application key",
+      "help": "Application key used to authenticate against the local Hue API",
+      "newLine": true
+    }
+  }
+}
