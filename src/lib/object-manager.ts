@@ -9,6 +9,16 @@ interface DeviceMetadata {
     archetype?: string;
 }
 
+interface StateDefinition {
+    name: string;
+    type: ioBroker.CommonType;
+    role: string;
+    value: ioBroker.StateValue;
+    unit?: string;
+    min?: number;
+    max?: number;
+}
+
 /**
  * Creates the ioBroker object model for Hue v2 resources.
  *
@@ -66,7 +76,8 @@ export class ObjectManager {
         await this.createOptionalInfoState(`${baseId}.info.archetype`, 'Archetype', metadata.archetype);
 
         for (const service of services) {
-            await this.adapter.extendObjectAsync(`${baseId}.${service.id}`, {
+            const serviceId = `${baseId}.${service.id}`;
+            await this.adapter.extendObjectAsync(serviceId, {
                 type: 'channel',
                 common: {
                     name: service.type,
@@ -77,7 +88,220 @@ export class ObjectManager {
                     idV1: service.id_v1,
                 },
             });
+
+            await this.syncServiceStates(serviceId, service);
         }
+    }
+
+    private async syncServiceStates(baseId: string, resource: HueResource): Promise<void> {
+        switch (resource.type) {
+            case 'light':
+                await this.syncLightStates(baseId, resource);
+                break;
+            case 'motion':
+                await this.syncMotionStates(baseId, resource);
+                break;
+            case 'temperature':
+                await this.syncTemperatureStates(baseId, resource);
+                break;
+            case 'light_level':
+                await this.syncLightLevelStates(baseId, resource);
+                break;
+            case 'device_power':
+                await this.syncDevicePowerStates(baseId, resource);
+                break;
+            case 'zigbee_connectivity':
+                await this.syncZigbeeConnectivityStates(baseId, resource);
+                break;
+        }
+    }
+
+    private async syncLightStates(baseId: string, resource: HueResource): Promise<void> {
+        const on = this.asRecord(resource.on);
+        if (typeof on?.on === 'boolean') {
+            await this.createState(`${baseId}.on`, {
+                name: 'On',
+                type: 'boolean',
+                role: 'switch',
+                value: on.on,
+            });
+        }
+
+        const dimming = this.asRecord(resource.dimming);
+        if (typeof dimming?.brightness === 'number') {
+            await this.createState(`${baseId}.brightness`, {
+                name: 'Brightness',
+                type: 'number',
+                role: 'level.dimmer',
+                value: dimming.brightness,
+                unit: '%',
+                min: 0,
+                max: 100,
+            });
+        }
+
+        const colorTemperature = this.asRecord(resource.color_temperature);
+        if (typeof colorTemperature?.mirek === 'number') {
+            const schema = this.asRecord(colorTemperature.mirek_schema);
+            await this.createState(`${baseId}.colorTemperature`, {
+                name: 'Color temperature',
+                type: 'number',
+                role: 'level.color.temperature',
+                value: colorTemperature.mirek,
+                unit: 'mired',
+                min: this.asNumber(schema?.mirek_minimum),
+                max: this.asNumber(schema?.mirek_maximum),
+            });
+        }
+
+        const color = this.asRecord(resource.color);
+        const xy = this.asRecord(color?.xy);
+        if (typeof xy?.x === 'number') {
+            await this.createState(`${baseId}.colorX`, {
+                name: 'Color X',
+                type: 'number',
+                role: 'value',
+                value: xy.x,
+                min: 0,
+                max: 1,
+            });
+        }
+        if (typeof xy?.y === 'number') {
+            await this.createState(`${baseId}.colorY`, {
+                name: 'Color Y',
+                type: 'number',
+                role: 'value',
+                value: xy.y,
+                min: 0,
+                max: 1,
+            });
+        }
+    }
+
+    private async syncMotionStates(baseId: string, resource: HueResource): Promise<void> {
+        if (typeof resource.enabled === 'boolean') {
+            await this.createState(`${baseId}.enabled`, {
+                name: 'Enabled',
+                type: 'boolean',
+                role: 'switch.enable',
+                value: resource.enabled,
+            });
+        }
+
+        const motion = this.asRecord(resource.motion);
+        if (typeof motion?.motion === 'boolean') {
+            await this.createState(`${baseId}.motion`, {
+                name: 'Motion',
+                type: 'boolean',
+                role: 'sensor.motion',
+                value: motion.motion,
+            });
+        }
+    }
+
+    private async syncTemperatureStates(baseId: string, resource: HueResource): Promise<void> {
+        if (typeof resource.enabled === 'boolean') {
+            await this.createState(`${baseId}.enabled`, {
+                name: 'Enabled',
+                type: 'boolean',
+                role: 'switch.enable',
+                value: resource.enabled,
+            });
+        }
+
+        const temperature = this.asRecord(resource.temperature);
+        if (typeof temperature?.temperature === 'number') {
+            await this.createState(`${baseId}.temperature`, {
+                name: 'Temperature',
+                type: 'number',
+                role: 'value.temperature',
+                value: temperature.temperature,
+                unit: '°C',
+            });
+        }
+    }
+
+    private async syncLightLevelStates(baseId: string, resource: HueResource): Promise<void> {
+        if (typeof resource.enabled === 'boolean') {
+            await this.createState(`${baseId}.enabled`, {
+                name: 'Enabled',
+                type: 'boolean',
+                role: 'switch.enable',
+                value: resource.enabled,
+            });
+        }
+
+        const light = this.asRecord(resource.light);
+        if (typeof light?.light_level === 'number') {
+            await this.createState(`${baseId}.lightLevel`, {
+                name: 'Light level',
+                type: 'number',
+                role: 'value',
+                value: light.light_level,
+            });
+        }
+    }
+
+    private async syncDevicePowerStates(baseId: string, resource: HueResource): Promise<void> {
+        const powerState = this.asRecord(resource.power_state);
+        if (typeof powerState?.battery_level === 'number') {
+            await this.createState(`${baseId}.battery`, {
+                name: 'Battery',
+                type: 'number',
+                role: 'value.battery',
+                value: powerState.battery_level,
+                unit: '%',
+                min: 0,
+                max: 100,
+            });
+        }
+
+        if (typeof powerState?.battery_state === 'string') {
+            await this.createState(`${baseId}.batteryState`, {
+                name: 'Battery state',
+                type: 'string',
+                role: 'text',
+                value: powerState.battery_state,
+            });
+        }
+    }
+
+    private async syncZigbeeConnectivityStates(baseId: string, resource: HueResource): Promise<void> {
+        if (typeof resource.status === 'string') {
+            await this.createState(`${baseId}.status`, {
+                name: 'Connectivity status',
+                type: 'string',
+                role: 'text',
+                value: resource.status,
+            });
+        }
+    }
+
+    private async createState(id: string, definition: StateDefinition): Promise<void> {
+        const common: ioBroker.StateCommon = {
+            name: definition.name,
+            type: definition.type,
+            role: definition.role,
+            read: true,
+            write: false,
+        };
+
+        if (definition.unit !== undefined) {
+            common.unit = definition.unit;
+        }
+        if (definition.min !== undefined) {
+            common.min = definition.min;
+        }
+        if (definition.max !== undefined) {
+            common.max = definition.max;
+        }
+
+        await this.adapter.extendObjectAsync(id, {
+            type: 'state',
+            common,
+            native: {},
+        });
+        await this.adapter.setStateAsync(id, definition.value, true);
     }
 
     private async createOptionalInfoState(id: string, name: string, value: string | undefined): Promise<void> {
@@ -124,5 +348,9 @@ export class ObjectManager {
 
     private asString(value: unknown): string | undefined {
         return typeof value === 'string' ? value : undefined;
+    }
+
+    private asNumber(value: unknown): number | undefined {
+        return typeof value === 'number' ? value : undefined;
     }
 }
