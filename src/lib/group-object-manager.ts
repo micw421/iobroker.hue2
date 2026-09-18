@@ -35,7 +35,11 @@ export class GroupObjectManager {
             const allOn = this.getGroupAllOn(container, resources);
             if (allOn !== undefined) await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', allOn, 'member_lights');
             if (this.groupHasEntertainmentCapability(container, resources)) await this.createDerivedBooleanState(`${baseId}.entertainment_active`, 'Entertainment active', this.isGroupEntertainmentActive(container, resources), 'entertainment_configuration');
-            if (groupedLight) { await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true }); await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources)); }
+            if (groupedLight) {
+                await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true });
+                await this.createState(`${baseId}.transition_active`, { name: 'Transition active', type: 'boolean', role: 'indicator', value: false, resource: groupedLight });
+                await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources));
+            }
             await this.syncGroupLights(baseId, container, resources);
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
