@@ -42,7 +42,10 @@ export class ObjectManager {
         const enabledServices = services.filter(service => typeof service.enabled === 'boolean');
         if (enabledServices.length > 0) await this.createState(`${baseId}.enabled`, { name: 'Enabled', type: 'boolean', role: 'switch.enable', value: enabledServices.every(service => service.enabled === true), resource: enabledServices[0], write: true }, { hueResourceIds: enabledServices.map(service => service.id), hueResourceTypes: enabledServices.map(service => service.type) });
         const light = services.find(service => service.type === 'light');
-        if (light) await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: light, write: true });
+        if (light) {
+            await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: light, write: true });
+            await this.createState(`${baseId}.transition_active`, { name: 'Transition active', type: 'boolean', role: 'indicator', value: false, resource: light });
+        }
         for (const service of services) await this.syncServiceStates(baseId, service);
     }
 
