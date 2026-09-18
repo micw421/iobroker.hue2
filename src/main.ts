@@ -13,6 +13,7 @@ class Hue2 extends utils.Adapter {
     private resources?: ResourceManager;
     private readonly objectManager: ObjectManager;
     private readonly groupObjectManager: GroupObjectManager;
+    private readonly transitionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({ ...options, name: 'hue2' });
@@ -84,7 +85,6 @@ class Hue2 extends utils.Adapter {
 
     private async handleResourceUpdate(update: HueResource): Promise<void> {
         if (!this.resources) return;
-        if (update.type === 'light') this.log.debug(`Hue raw light event: ${JSON.stringify(update)}`);
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
         await this.groupObjectManager.updateResource(this.resources, merged);
@@ -112,7 +112,7 @@ class Hue2 extends utils.Adapter {
                 }
                 case 'color_temperature': await this.writeSingleResource(native, { color_temperature: { mirek: this.requireNumber(state.val, 'color_temperature') } }); break;
                 case 'color': await this.writeColor(native, state.val); break;
-                case 'command': await this.writeCommand(native, state.val); break;
+                case 'command': await this.writeCommand(relativeId, native, state.val); break;
                 case 'recall':
                     await this.recallScene(native, state.val);
                     await this.setStateAsync(relativeId, false, true);
@@ -128,13 +128,39 @@ class Hue2 extends utils.Adapter {
         }
     }
 
-    private async writeCommand(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+    private async writeCommand(relativeId: string, native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
         if (typeof value !== 'string') throw new Error('command must be a JSON string');
         let parsed: unknown;
         try { parsed = JSON.parse(value); } catch { throw new Error('command must be valid JSON'); }
         const payload = this.asRecord(parsed);
         if (!payload) throw new Error('command must contain a JSON object');
         await this.writeSingleResource(native, payload);
+        await this.updateTransitionState(relativeId, payload);
+    }
+
+    private async updateTransitionState(commandId: string, payload: Record<string, unknown>): Promise<void> {
+        const dynamics = this.asRecord(payload.dynamics);
+        if (!dynamics || dynamics.duration === undefined) return;
+        const duration = this.requireNumber(dynamics.duration as ioBroker.StateValue, 'dynamics.duration');
+        if (duration < 0) throw new Error('dynamics.duration must not be negative');
+
+        const baseId = commandId.slice(0, -'.command'.length);
+        const stateId = `${baseId}.transition_active`;
+        const existingTimer = this.transitionTimers.get(stateId);
+        if (existingTimer) clearTimeout(existingTimer);
+        this.transitionTimers.delete(stateId);
+
+        if (duration === 0) {
+            await this.setStateAsync(stateId, false, true);
+            return;
+        }
+
+        await this.setStateAsync(stateId, true, true);
+        const timer = setTimeout(() => {
+            this.transitionTimers.delete(stateId);
+            void this.setStateAsync(stateId, false, true);
+        }, duration);
+        this.transitionTimers.set(stateId, timer);
     }
 
     private async recallScene(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
@@ -181,7 +207,12 @@ class Hue2 extends utils.Adapter {
     }
 
     private asRecord(value: unknown): Record<string, unknown> | undefined { if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined; return value as Record<string, unknown>; }
-    private onUnload(callback: () => void): void { this.eventStream?.stop(); callback(); }
+    private onUnload(callback: () => void): void {
+        this.eventStream?.stop();
+        for (const timer of this.transitionTimers.values()) clearTimeout(timer);
+        this.transitionTimers.clear();
+        callback();
+    }
 }
 
 if (require.main !== module) module.exports = (options: Partial<utils.AdapterOptions> | undefined) => new Hue2(options);
