@@ -145,7 +145,32 @@ class Hue2 extends utils.Adapter {
         if (duration < 0) throw new Error('dynamics.duration must not be negative');
 
         const baseId = commandId.slice(0, -'.command'.length);
-        const stateId = `${baseId}.transition_active`;
+        const stateIds = [`${baseId}.transition_active`, ...this.getGroupTransitionDeviceStateIds(baseId)];
+
+        for (const stateId of stateIds) await this.setTransitionTimer(stateId, duration);
+    }
+
+    private getGroupTransitionDeviceStateIds(baseId: string): string[] {
+        if (!this.resources) return [];
+        const parts = baseId.split('.');
+        if (parts.length !== 2 || (parts[0] !== 'rooms' && parts[0] !== 'zones')) return [];
+        const type = parts[0] === 'rooms' ? 'room' : 'zone';
+        const container = this.resources.getById(parts[1]);
+        if (!container || container.type !== type || !Array.isArray(container.children)) return [];
+
+        const deviceIds = new Set<string>();
+        for (const child of container.children) {
+            const reference = this.asRecord(child);
+            const rid = typeof reference?.rid === 'string' ? reference.rid : undefined;
+            const rtype = typeof reference?.rtype === 'string' ? reference.rtype : undefined;
+            if (!rid || !rtype) continue;
+            const deviceId = rtype === 'device' ? rid : this.resources.getDeviceIdForService(rid);
+            if (deviceId && this.resources.getDeviceServices(deviceId).some(service => service.type === 'light')) deviceIds.add(deviceId);
+        }
+        return [...deviceIds].map(deviceId => `devices.${deviceId}.transition_active`);
+    }
+
+    private async setTransitionTimer(stateId: string, duration: number): Promise<void> {
         const existingTimer = this.transitionTimers.get(stateId);
         if (existingTimer) clearTimeout(existingTimer);
         this.transitionTimers.delete(stateId);
