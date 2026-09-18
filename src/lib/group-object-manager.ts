@@ -36,6 +36,7 @@ export class GroupObjectManager {
             if (allOn !== undefined) await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', allOn, 'member_lights');
             if (this.groupHasEntertainmentCapability(container, resources)) await this.createDerivedBooleanState(`${baseId}.entertainment_active`, 'Entertainment active', this.isGroupEntertainmentActive(container, resources), 'entertainment_configuration');
             if (groupedLight) { await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: groupedLight, write: true }); await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources)); }
+            await this.syncGroupLights(baseId, container, resources);
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
     }
@@ -88,6 +89,19 @@ export class GroupObjectManager {
         const lights: HueResource[] = [];
         for (const deviceId of this.getGroupDeviceIds(container, resources)) for (const service of resources.getDeviceServices(deviceId)) if (service.type === 'light') lights.push(service);
         return lights;
+    }
+
+    private async syncGroupLights(baseId: string, container: HueResource, resources: ResourceManager): Promise<void> {
+        const deviceIds = this.getGroupDeviceIds(container, resources).filter(deviceId => resources.getDeviceServices(deviceId).some(service => service.type === 'light'));
+        if (deviceIds.length === 0) return;
+        await this.adapter.extendObjectAsync(`${baseId}.lights`, { type: 'channel', common: { name: 'Lights' }, native: {} });
+        for (const deviceId of deviceIds) {
+            const device = resources.getDevice(deviceId);
+            const metadata = this.asRecord(device?.metadata);
+            const name = this.asString(metadata?.name) ?? deviceId;
+            await this.adapter.extendObjectAsync(`${baseId}.lights.${deviceId}`, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: { hueDeviceResourceId: deviceId } });
+            await this.adapter.setStateAsync(`${baseId}.lights.${deviceId}`, name, true);
+        }
     }
 
     private getGroupAllOn(container: HueResource, resources: ResourceManager): boolean | undefined {
