@@ -84,6 +84,7 @@ class Hue2 extends utils.Adapter {
 
     private async handleResourceUpdate(update: HueResource): Promise<void> {
         if (!this.resources) return;
+        if (update.type === 'light') this.log.debug(`Hue raw light event: ${JSON.stringify(update)}`);
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
         await this.groupObjectManager.updateResource(this.resources, merged);
