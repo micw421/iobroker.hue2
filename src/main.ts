@@ -13,7 +13,9 @@ class Hue2 extends utils.Adapter {
     private resources?: ResourceManager;
     private readonly objectManager: ObjectManager;
     private readonly groupObjectManager: GroupObjectManager;
-    private readonly transitionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    private readonly transitionTimers = new Set<ReturnType<typeof setTimeout>>();
+    private readonly transitionTokens = new Map<string, number>();
+    private nextTransitionToken = 0;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({ ...options, name: 'hue2' });
@@ -147,7 +149,7 @@ class Hue2 extends utils.Adapter {
         const baseId = commandId.slice(0, -'.command'.length);
         const stateIds = [`${baseId}.transition_active`, ...this.getGroupTransitionDeviceStateIds(baseId)];
 
-        for (const stateId of stateIds) await this.setTransitionTimer(stateId, duration);
+        await this.setTransitionOperation(stateIds, duration);
     }
 
     private getGroupTransitionDeviceStateIds(baseId: string): string[] {
@@ -170,22 +172,26 @@ class Hue2 extends utils.Adapter {
         return [...deviceIds].map(deviceId => `devices.${deviceId}.transition_active`);
     }
 
-    private async setTransitionTimer(stateId: string, duration: number): Promise<void> {
-        const existingTimer = this.transitionTimers.get(stateId);
-        if (existingTimer) clearTimeout(existingTimer);
-        this.transitionTimers.delete(stateId);
+    private async setTransitionOperation(stateIds: string[], duration: number): Promise<void> {
+        const uniqueStateIds = [...new Set(stateIds)];
+        const token = ++this.nextTransitionToken;
 
-        if (duration === 0) {
-            await this.setStateAsync(stateId, false, true);
-            return;
+        for (const stateId of uniqueStateIds) {
+            this.transitionTokens.set(stateId, token);
+            await this.setStateAsync(stateId, duration > 0, true);
         }
 
-        await this.setStateAsync(stateId, true, true);
+        if (duration === 0) return;
+
         const timer = setTimeout(() => {
-            this.transitionTimers.delete(stateId);
-            void this.setStateAsync(stateId, false, true);
+            this.transitionTimers.delete(timer);
+            for (const stateId of uniqueStateIds) {
+                if (this.transitionTokens.get(stateId) !== token) continue;
+                this.transitionTokens.delete(stateId);
+                void this.setStateAsync(stateId, false, true);
+            }
         }, duration);
-        this.transitionTimers.set(stateId, timer);
+        this.transitionTimers.add(timer);
     }
 
     private async recallScene(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
@@ -234,8 +240,9 @@ class Hue2 extends utils.Adapter {
     private asRecord(value: unknown): Record<string, unknown> | undefined { if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined; return value as Record<string, unknown>; }
     private onUnload(callback: () => void): void {
         this.eventStream?.stop();
-        for (const timer of this.transitionTimers.values()) clearTimeout(timer);
+        for (const timer of this.transitionTimers) clearTimeout(timer);
         this.transitionTimers.clear();
+        this.transitionTokens.clear();
         callback();
     }
 }
