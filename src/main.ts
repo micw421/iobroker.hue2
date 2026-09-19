@@ -106,14 +106,25 @@ class Hue2 extends utils.Adapter {
         try {
             switch (property) {
                 case 'enabled': await this.writeEnabled(native, state.val); break;
-                case 'on': await this.writeSingleResource(native, { on: { on: this.requireBoolean(state.val, 'on') } }); break;
+                case 'on':
+                    await this.writeSingleResource(native, { on: { on: this.requireBoolean(state.val, 'on') } });
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
                 case 'dimming': {
                     const brightness = this.requireNumber(state.val, 'dimming');
                     if (brightness < 0 || brightness > 100) throw new Error('dimming must be between 0 and 100');
-                    await this.writeSingleResource(native, { dimming: { brightness } }); break;
+                    await this.writeSingleResource(native, { dimming: { brightness } });
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
                 }
-                case 'color_temperature': await this.writeSingleResource(native, { color_temperature: { mirek: this.requireNumber(state.val, 'color_temperature') } }); break;
-                case 'color': await this.writeColor(native, state.val); break;
+                case 'color_temperature':
+                    await this.writeSingleResource(native, { color_temperature: { mirek: this.requireNumber(state.val, 'color_temperature') } });
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
+                case 'color':
+                    await this.writeColor(native, state.val);
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
                 case 'command': await this.writeCommand(relativeId, native, state.val); break;
                 case 'recall':
                     await this.recallScene(native, state.val);
@@ -137,7 +148,21 @@ class Hue2 extends utils.Adapter {
         const payload = this.asRecord(parsed);
         if (!payload) throw new Error('command must contain a JSON object');
         await this.writeSingleResource(native, payload);
-        await this.updateTransitionState(relativeId, payload);
+        const dynamics = this.asRecord(payload.dynamics);
+        if (dynamics?.duration === undefined) await this.cancelTransitionForWrite(relativeId);
+        else await this.updateTransitionState(relativeId, payload);
+    }
+
+    private async cancelTransitionForWrite(relativeId: string): Promise<void> {
+        const baseId = relativeId.slice(0, relativeId.lastIndexOf('.'));
+        const stateIds = [`${baseId}.transition_active`, ...this.getGroupTransitionDeviceStateIds(baseId)];
+        const uniqueStateIds = [...new Set(stateIds)];
+
+        for (const stateId of uniqueStateIds) {
+            if (!this.transitionTokens.has(stateId)) continue;
+            this.transitionTokens.delete(stateId);
+            await this.setStateAsync(stateId, false, true);
+        }
     }
 
     private async updateTransitionState(commandId: string, payload: Record<string, unknown>): Promise<void> {
