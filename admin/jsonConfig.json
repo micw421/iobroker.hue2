@@ -12,6 +12,12 @@
       "label": "Hue application key",
       "help": "Application key used to authenticate against the local Hue API",
       "newLine": true
+    },
+    "dimmingControlsPower": {
+      "type": "checkbox",
+      "label": "Turn lights on/off via dimming",
+      "help": "If enabled, writing a dimming value greater than 0 turns the light/group on. Writing 0 turns it off.",
+      "newLine": true
     }
   }
 }
