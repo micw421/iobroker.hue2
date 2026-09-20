@@ -222,6 +222,9 @@ The adapter expects the Hue Bridge address and Hue application key in the instan
 
 - `bridge`
 - `applicationKey`
+- `dimmingControlsPower` (default: `false`): if enabled, writing `dimming > 0` also turns the light or group on. Writing `dimming = 0` turns it off. With this option disabled, `dimming` only changes brightness and does not implicitly change the power state.
+
+The `dimmingControlsPower` option only affects direct writes to the `dimming` state. Raw JSON written to `command` is sent as specified and is not modified by this option.
 
 ## Development
 
