@@ -5,7 +5,7 @@ import { HueV2Client, type HueResource } from './lib/hue-v2-client';
 import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
 
-interface Hue2Config extends ioBroker.AdapterConfig { bridge: string; applicationKey: string; }
+interface Hue2Config extends ioBroker.AdapterConfig { bridge: string; applicationKey: string; dimmingControlsPower?: boolean; }
 
 class Hue2 extends utils.Adapter {
     private client?: HueV2Client;
@@ -113,7 +113,13 @@ class Hue2 extends utils.Adapter {
                 case 'dimming': {
                     const brightness = this.requireNumber(state.val, 'dimming');
                     if (brightness < 0 || brightness > 100) throw new Error('dimming must be between 0 and 100');
-                    await this.writeSingleResource(native, { dimming: { brightness } });
+                    const config = this.config as Hue2Config;
+                    const payload = config.dimmingControlsPower
+                        ? brightness === 0
+                            ? { on: { on: false } }
+                            : { on: { on: true }, dimming: { brightness } }
+                        : { dimming: { brightness } };
+                    await this.writeSingleResource(native, payload);
                     await this.cancelTransitionForWrite(relativeId);
                     break;
                 }
