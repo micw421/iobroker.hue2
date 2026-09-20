@@ -9,7 +9,8 @@ export class GroupObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async sync(resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync('scenes', { recursive: true });
+        const legacyScenes = await this.adapter.getObjectAsync('scenes');
+        if (legacyScenes) await this.adapter.delObjectAsync('scenes', { recursive: true });
         await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources);
         await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources);
     }
@@ -23,9 +24,9 @@ export class GroupObjectManager {
     }
 
     private async syncGroupedContainerType(type: 'room' | 'zone', root: 'rooms' | 'zones', rootName: string, resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync(root, { recursive: true });
         await this.adapter.extendObjectAsync(root, { type: 'folder', common: { name: rootName }, native: {} });
-        for (const container of resources.getByType(type)) {
+        const containers = resources.getByType(type);
+        for (const container of containers) {
             const metadata = this.asRecord(container.metadata); const name = this.asString(metadata?.name) ?? container.id;
             const groupedLight = this.getServiceReferences(container).filter(reference => reference.rtype === 'grouped_light').map(reference => resources.getById(reference.rid)).find((candidate): candidate is HueResource => candidate !== undefined);
             const baseId = `${root}.${container.id}`;
@@ -43,11 +44,16 @@ export class GroupObjectManager {
             await this.syncGroupLights(baseId, container, resources);
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
+        await this.removeObsoleteContainers(root, type, new Set(containers.map(container => container.id)));
     }
 
     private async syncScenesForGroup(baseId: string, groupId: string, groupType: string, resources: ResourceManager): Promise<void> {
         const scenes = resources.getByType('scene').filter(scene => { const group = this.asRecord(scene.group); return this.asString(group?.rid) === groupId && this.asString(group?.rtype) === groupType; });
-        if (scenes.length === 0) return;
+        if (scenes.length === 0) {
+            const scenesObject = await this.adapter.getObjectAsync(`${baseId}.scenes`);
+            if (scenesObject) await this.adapter.delObjectAsync(`${baseId}.scenes`, { recursive: true });
+            return;
+        }
         await this.adapter.extendObjectAsync(`${baseId}.scenes`, { type: 'channel', common: { name: 'Scenes' }, native: {} });
         for (const scene of scenes) {
             const metadata = this.asRecord(scene.metadata); const name = this.asString(metadata?.name) ?? scene.id; const sceneBaseId = `${baseId}.scenes.${scene.id}`;
@@ -56,6 +62,7 @@ export class GroupObjectManager {
             await this.createState(`${sceneBaseId}.recall`, { name: 'Recall', type: 'boolean', role: 'button', value: false, resource: scene, write: true });
             const status = this.getSceneStatus(scene); if (status !== undefined) await this.createState(`${sceneBaseId}.status`, { name: 'Status', type: 'string', role: 'text', value: status, resource: scene });
         }
+        await this.removeObsoleteSceneObjects(baseId, new Set(scenes.map(scene => scene.id)));
     }
 
     private async updateSceneStatus(scene: HueResource): Promise<void> {
@@ -97,7 +104,11 @@ export class GroupObjectManager {
 
     private async syncGroupLights(baseId: string, container: HueResource, resources: ResourceManager): Promise<void> {
         const deviceIds = this.getGroupDeviceIds(container, resources).filter(deviceId => resources.getDeviceServices(deviceId).some(service => service.type === 'light'));
-        if (deviceIds.length === 0) return;
+        if (deviceIds.length === 0) {
+            const lightsObject = await this.adapter.getObjectAsync(`${baseId}.lights`);
+            if (lightsObject) await this.adapter.delObjectAsync(`${baseId}.lights`, { recursive: true });
+            return;
+        }
         await this.adapter.extendObjectAsync(`${baseId}.lights`, { type: 'channel', common: { name: 'Lights' }, native: {} });
         for (const deviceId of deviceIds) {
             const device = resources.getDevice(deviceId);
@@ -106,6 +117,48 @@ export class GroupObjectManager {
             await this.adapter.extendObjectAsync(`${baseId}.lights.${deviceId}`, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: { hueDeviceResourceId: deviceId } });
             await this.adapter.setStateAsync(`${baseId}.lights.${deviceId}`, name, true);
         }
+        await this.removeObsoleteLightObjects(baseId, new Set(deviceIds));
+    }
+
+    private async removeObsoleteContainers(root: 'rooms' | 'zones', type: 'room' | 'zone', currentIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.${root}.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        const obsolete = new Set<string>();
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'channel') continue;
+            const relative = id.slice(prefix.length);
+            if (relative.includes('.')) continue;
+            const native = object.native as Record<string, unknown>;
+            if (native.hueResourceType === type && !currentIds.has(relative)) obsolete.add(relative);
+        }
+        for (const id of obsolete) await this.adapter.delObjectAsync(`${root}.${id}`, { recursive: true });
+    }
+
+    private async removeObsoleteLightObjects(baseId: string, currentDeviceIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.${baseId}.lights.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'state') continue;
+            const deviceId = id.slice(prefix.length);
+            const native = object.native as Record<string, unknown>;
+            if (native.hueDeviceResourceId === deviceId && !currentDeviceIds.has(deviceId)) {
+                await this.adapter.delObjectAsync(`${baseId}.lights.${deviceId}`);
+            }
+        }
+    }
+
+    private async removeObsoleteSceneObjects(baseId: string, currentSceneIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.${baseId}.scenes.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        const obsolete = new Set<string>();
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'channel') continue;
+            const relative = id.slice(prefix.length);
+            if (relative.includes('.')) continue;
+            const native = object.native as Record<string, unknown>;
+            if (native.hueResourceType === 'scene' && !currentSceneIds.has(relative)) obsolete.add(relative);
+        }
+        for (const sceneId of obsolete) await this.adapter.delObjectAsync(`${baseId}.scenes.${sceneId}`, { recursive: true });
     }
 
     private getGroupAllOn(container: HueResource, resources: ResourceManager): boolean | undefined {
