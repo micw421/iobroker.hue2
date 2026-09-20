@@ -8,7 +8,7 @@
     "extIcon": "https://raw.githubusercontent.com/micw421/iobroker.hue2/main/admin/hue2.png", "icon": "hue2.png", "messagebox": false, "loglevel": "info",
     "dependencies": [{ "js-controller": ">=6.0.0" }], "globalDependencies": [{ "admin": ">=7.0.0" }]
   },
-  "native": { "bridge": "", "applicationKey": "" },
+  "native": { "bridge": "", "applicationKey": "", "dimmingControlsPower": false },
   "objects": [
     { "_id": "info", "type": "channel", "common": { "name": "Information" }, "native": {} },
     { "_id": "info.connection", "type": "state", "common": { "name": "Connected to Hue Bridge", "type": "boolean", "role": "indicator.connected", "read": true, "write": false, "def": false }, "native": {} }
