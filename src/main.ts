@@ -95,7 +95,7 @@ class Hue2 extends utils.Adapter {
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
         await this.groupObjectManager.updateResource(this.resources, merged);
-        await this.entertainmentObjectManager.updateResource(merged);
+        await this.entertainmentObjectManager.updateResource(this.resources, merged);
         this.log.debug(`Hue event update ${merged.type}: ${merged.id}`);
     }
 
