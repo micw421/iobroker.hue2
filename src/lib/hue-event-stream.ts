@@ -13,6 +13,7 @@ export interface HueEventStreamOptions {
     address: string;
     applicationKey: string;
     reconnectDelayMs?: number;
+    maxReconnectDelayMs?: number;
 }
 
 export interface HueEventStreamHandlers {
@@ -31,6 +32,8 @@ export class HueEventStream {
     private readonly url: URL;
     private readonly applicationKey: string;
     private readonly reconnectDelayMs: number;
+    private readonly maxReconnectDelayMs: number;
+    private reconnectAttempt = 0;
     private readonly agent = new https.Agent({ rejectUnauthorized: false });
     private request?: ClientRequest;
     private response?: IncomingMessage;
@@ -43,6 +46,7 @@ export class HueEventStream {
         this.url = new URL(`https://${options.address}/eventstream/clip/v2`);
         this.applicationKey = options.applicationKey;
         this.reconnectDelayMs = options.reconnectDelayMs ?? 3_000;
+        this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30_000;
     }
 
     public start(handlers: HueEventStreamHandlers): void {
@@ -104,6 +108,7 @@ export class HueEventStream {
                     return;
                 }
 
+                this.reconnectAttempt = 0;
                 response.setEncoding('utf8');
                 this.handlers?.onConnected?.();
 
@@ -176,10 +181,17 @@ export class HueEventStream {
         if (this.stopped || this.reconnectTimer) {
             return;
         }
+
+        const delay = Math.min(
+            this.maxReconnectDelayMs,
+            this.reconnectDelayMs * Math.pow(2, this.reconnectAttempt),
+        );
+        this.reconnectAttempt++;
+
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = undefined;
             this.connect();
-        }, this.reconnectDelayMs);
+        }, delay);
     }
 
     private isEnvelope(value: unknown): value is HueEventEnvelope {
