@@ -6,9 +6,12 @@ export class EntertainmentObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async sync(resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync('entertainment', { recursive: true });
         const configurations = resources.getByType('entertainment_configuration');
-        if (configurations.length === 0) return;
+        if (configurations.length === 0) {
+            const root = await this.adapter.getObjectAsync('entertainment');
+            if (root) await this.adapter.delObjectAsync('entertainment', { recursive: true });
+            return;
+        }
 
         await this.adapter.extendObjectAsync('entertainment', {
             type: 'folder',
@@ -19,6 +22,7 @@ export class EntertainmentObjectManager {
         for (const configuration of configurations) {
             await this.syncConfiguration(configuration, resources);
         }
+        await this.removeObsoleteConfigurations(new Set(configurations.map(configuration => configuration.id)));
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
@@ -78,10 +82,12 @@ export class EntertainmentObjectManager {
 
     private async syncLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
         const lightsBaseId = `${baseId}.lights`;
-        await this.adapter.delObjectAsync(lightsBaseId, { recursive: true });
-
         const deviceIds = this.getEntertainmentDeviceIds(configuration, resources);
-        if (deviceIds.length === 0) return;
+        if (deviceIds.length === 0) {
+            const lightsObject = await this.adapter.getObjectAsync(lightsBaseId);
+            if (lightsObject) await this.adapter.delObjectAsync(lightsBaseId, { recursive: true });
+            return;
+        }
 
         await this.adapter.extendObjectAsync(lightsBaseId, {
             type: 'channel',
@@ -99,6 +105,34 @@ export class EntertainmentObjectManager {
                 native: { hueDeviceResourceId: deviceId },
             });
             await this.adapter.setStateAsync(`${lightsBaseId}.${deviceId}`, name, true);
+        }
+        await this.removeObsoleteLightObjects(baseId, new Set(deviceIds));
+    }
+
+    private async removeObsoleteConfigurations(currentIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.entertainment.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        const obsolete = new Set<string>();
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'channel') continue;
+            const relative = id.slice(prefix.length);
+            if (relative.includes('.')) continue;
+            const native = object.native as Record<string, unknown>;
+            if (native.hueResourceType === 'entertainment_configuration' && !currentIds.has(relative)) obsolete.add(relative);
+        }
+        for (const id of obsolete) await this.adapter.delObjectAsync(`entertainment.${id}`, { recursive: true });
+    }
+
+    private async removeObsoleteLightObjects(baseId: string, currentDeviceIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.${baseId}.lights.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'state') continue;
+            const deviceId = id.slice(prefix.length);
+            const native = object.native as Record<string, unknown>;
+            if (native.hueDeviceResourceId === deviceId && !currentDeviceIds.has(deviceId)) {
+                await this.adapter.delObjectAsync(`${baseId}.lights.${deviceId}`);
+            }
         }
     }
 
