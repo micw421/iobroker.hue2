@@ -1,4 +1,5 @@
 import * as utils from '@iobroker/adapter-core';
+import { EntertainmentObjectManager } from './lib/entertainment-object-manager';
 import { GroupObjectManager } from './lib/group-object-manager';
 import { HueEventStream } from './lib/hue-event-stream';
 import { HueV2Client, type HueResource } from './lib/hue-v2-client';
@@ -13,6 +14,7 @@ class Hue2 extends utils.Adapter {
     private resources?: ResourceManager;
     private readonly objectManager: ObjectManager;
     private readonly groupObjectManager: GroupObjectManager;
+    private readonly entertainmentObjectManager: EntertainmentObjectManager;
     private readonly transitionTimers = new Set<ReturnType<typeof setTimeout>>();
     private readonly transitionTokens = new Map<string, number>();
     private nextTransitionToken = 0;
@@ -21,6 +23,7 @@ class Hue2 extends utils.Adapter {
         super({ ...options, name: 'hue2' });
         this.objectManager = new ObjectManager(this);
         this.groupObjectManager = new GroupObjectManager(this);
+        this.entertainmentObjectManager = new EntertainmentObjectManager(this);
         this.on('ready', this.onReady.bind(this));
         this.on('stateChange', this.onStateChange.bind(this));
         this.on('unload', this.onUnload.bind(this));
@@ -40,9 +43,11 @@ class Hue2 extends utils.Adapter {
             this.resources = new ResourceManager(resources);
             await this.objectManager.syncDevices(this.resources);
             await this.groupObjectManager.sync(this.resources);
+            await this.entertainmentObjectManager.sync(this.resources);
             this.subscribeStates('devices.*');
             this.subscribeStates('rooms.*');
             this.subscribeStates('zones.*');
+            this.subscribeStates('entertainment.*');
             await this.setState('info.connection', true, true);
             this.log.info(`Connected to Hue Bridge. Indexed ${this.resources.size} API v2 resources.`);
             this.logResourceSummary();
@@ -90,6 +95,7 @@ class Hue2 extends utils.Adapter {
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
         await this.groupObjectManager.updateResource(this.resources, merged);
+        await this.entertainmentObjectManager.updateResource(merged);
         this.log.debug(`Hue event update ${merged.type}: ${merged.id}`);
     }
 
@@ -98,7 +104,7 @@ class Hue2 extends utils.Adapter {
         const instancePrefix = `${this.namespace}.`;
         if (!id.startsWith(instancePrefix)) return;
         const relativeId = id.slice(instancePrefix.length);
-        if (!['devices.', 'rooms.', 'zones.'].some(prefix => relativeId.startsWith(prefix))) return;
+        if (!['devices.', 'rooms.', 'zones.', 'entertainment.'].some(prefix => relativeId.startsWith(prefix))) return;
         const property = id.slice(id.lastIndexOf('.') + 1);
         const object = await this.getObjectAsync(relativeId);
         if (!object || object.type !== 'state') return;
@@ -132,6 +138,10 @@ class Hue2 extends utils.Adapter {
                     await this.cancelTransitionForWrite(relativeId);
                     break;
                 case 'command': await this.writeCommand(relativeId, native, state.val); break;
+                case 'start':
+                case 'stop':
+                    await this.writeEntertainmentAction(relativeId, native, property, state.val);
+                    return;
                 case 'recall':
                     await this.recallScene(native, state.val);
                     await this.setStateAsync(relativeId, false, true);
@@ -145,6 +155,17 @@ class Hue2 extends utils.Adapter {
             const message = error instanceof Error ? error.message : String(error);
             this.log.warn(`Could not write ${relativeId} to Hue Bridge: ${message}`);
         }
+    }
+
+    private async writeEntertainmentAction(relativeId: string, native: Record<string, unknown>, action: 'start' | 'stop', value: ioBroker.StateValue): Promise<void> {
+        const pressed = this.requireBoolean(value, action);
+        if (!pressed) {
+            await this.setStateAsync(relativeId, false, true);
+            return;
+        }
+        await this.writeSingleResource(native, { action });
+        await this.setStateAsync(relativeId, false, true);
+        this.log.debug(`Sent Hue Entertainment action ${action} for ${relativeId}`);
     }
 
     private async writeCommand(relativeId: string, native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
