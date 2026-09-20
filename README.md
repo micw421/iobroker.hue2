@@ -148,6 +148,24 @@ This is a locally tracked adapter state. Hue does not provide a reliable general
 
 The state is only created where an entertainment relationship exists. It is independent of the normal `on` state: a light being controlled by Hue Entertainment does not cause the adapter to overwrite its regular `on` value.
 
+### Entertainment configurations
+
+Hue Entertainment configurations are exposed as their own top-level resources:
+
+```text
+hue2.0.entertainment.<configuration UUID>
+├─ name
+├─ active
+├─ start
+└─ stop
+```
+
+`active` is a read-only status derived from the Hue `entertainment_configuration.status`.
+
+`start` and `stop` are button states. Writing `true` sends the corresponding Hue v2 Entertainment action to that configuration; the button is then reset to `false`. Changes to the actual Entertainment status are received through the Hue event stream.
+
+The existing `entertainment_active` states on devices, rooms and zones remain read-only convenience indicators. To stop an active Entertainment session, use the `stop` state of the corresponding entry below `entertainment`.
+
 ### `lights`
 
 Rooms and zones contain a `lights` channel listing their member lights:
