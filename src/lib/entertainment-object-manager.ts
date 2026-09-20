@@ -17,23 +17,24 @@ export class EntertainmentObjectManager {
         });
 
         for (const configuration of configurations) {
-            await this.syncConfiguration(configuration);
+            await this.syncConfiguration(configuration, resources);
         }
     }
 
-    public async updateResource(resource: HueResource): Promise<void> {
+    public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
         if (resource.type !== 'entertainment_configuration') return;
         const baseId = `entertainment.${resource.id}`;
         const active = resource.status === 'active';
         const object = await this.adapter.getObjectAsync(baseId);
         if (!object) {
-            await this.syncConfiguration(resource);
+            await this.syncConfiguration(resource, resources);
             return;
         }
         await this.adapter.setStateAsync(`${baseId}.active`, active, true);
+        await this.syncLights(baseId, resource, resources);
     }
 
-    private async syncConfiguration(configuration: HueResource): Promise<void> {
+    private async syncConfiguration(configuration: HueResource, resources: ResourceManager): Promise<void> {
         const metadata = this.asRecord(configuration.metadata);
         const name = typeof metadata?.name === 'string' ? metadata.name : configuration.id;
         const baseId = `entertainment.${configuration.id}`;
@@ -70,6 +71,72 @@ export class EntertainmentObjectManager {
                 native,
             });
             await this.adapter.setStateAsync(`${baseId}.${action}`, false, true);
+        }
+
+        await this.syncLights(baseId, configuration, resources);
+    }
+
+    private async syncLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
+        const lightsBaseId = `${baseId}.lights`;
+        await this.adapter.delObjectAsync(lightsBaseId, { recursive: true });
+
+        const deviceIds = this.getEntertainmentDeviceIds(configuration, resources);
+        if (deviceIds.length === 0) return;
+
+        await this.adapter.extendObjectAsync(lightsBaseId, {
+            type: 'channel',
+            common: { name: 'Lights' },
+            native: {},
+        });
+
+        for (const deviceId of deviceIds) {
+            const device = resources.getDevice(deviceId);
+            const metadata = this.asRecord(device?.metadata);
+            const name = typeof metadata?.name === 'string' ? metadata.name : deviceId;
+            await this.adapter.extendObjectAsync(`${lightsBaseId}.${deviceId}`, {
+                type: 'state',
+                common: { name, type: 'string', role: 'text', read: true, write: false },
+                native: { hueDeviceResourceId: deviceId },
+            });
+            await this.adapter.setStateAsync(`${lightsBaseId}.${deviceId}`, name, true);
+        }
+    }
+
+    private getEntertainmentDeviceIds(configuration: HueResource, resources: ResourceManager): string[] {
+        const deviceIds = new Set<string>();
+
+        if (Array.isArray(configuration.light_services)) {
+            for (const entry of configuration.light_services) {
+                const reference = this.asRecord(entry);
+                const rid = typeof reference?.rid === 'string' ? reference.rid : undefined;
+                if (!rid) continue;
+                const deviceId = resources.getDeviceIdForService(rid);
+                if (deviceId) deviceIds.add(deviceId);
+            }
+        }
+
+        this.collectReferencedDeviceIds(configuration.channels, resources, deviceIds);
+        return [...deviceIds];
+    }
+
+    private collectReferencedDeviceIds(value: unknown, resources: ResourceManager, deviceIds: Set<string>): void {
+        if (Array.isArray(value)) {
+            for (const entry of value) this.collectReferencedDeviceIds(entry, resources, deviceIds);
+            return;
+        }
+
+        const record = this.asRecord(value);
+        if (!record) return;
+
+        const service = this.asRecord(record.service);
+        const rid = typeof service?.rid === 'string' ? service.rid : undefined;
+        if (rid) {
+            const deviceId = resources.getDeviceIdForService(rid);
+            if (deviceId) deviceIds.add(deviceId);
+        }
+
+        for (const entry of Object.values(record)) {
+            this.collectReferencedDeviceIds(entry, resources, deviceIds);
         }
     }
 
