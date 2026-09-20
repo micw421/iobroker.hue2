@@ -5,6 +5,7 @@ import { HueEventStream } from './lib/hue-event-stream';
 import { HueV2Client, type HueResource } from './lib/hue-v2-client';
 import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
+import { TransitionTracker } from './lib/transition-tracker';
 
 interface Hue2Config extends ioBroker.AdapterConfig { bridge: string; applicationKey: string; dimmingControlsPower?: boolean; }
 
@@ -15,9 +16,7 @@ class Hue2 extends utils.Adapter {
     private readonly objectManager: ObjectManager;
     private readonly groupObjectManager: GroupObjectManager;
     private readonly entertainmentObjectManager: EntertainmentObjectManager;
-    private readonly transitionTimers = new Set<ReturnType<typeof setTimeout>>();
-    private readonly transitionTokens = new Map<string, number>();
-    private nextTransitionToken = 0;
+    private readonly transitionTracker: TransitionTracker;
     private eventStreamHasConnected = false;
     private reconnectSync?: Promise<void>;
 
@@ -26,6 +25,7 @@ class Hue2 extends utils.Adapter {
         this.objectManager = new ObjectManager(this);
         this.groupObjectManager = new GroupObjectManager(this);
         this.entertainmentObjectManager = new EntertainmentObjectManager(this);
+        this.transitionTracker = new TransitionTracker((stateId, value) => this.setStateAsync(stateId, value, true));
         this.on('ready', this.onReady.bind(this));
         this.on('stateChange', this.onStateChange.bind(this));
         this.on('unload', this.onUnload.bind(this));
@@ -220,11 +220,7 @@ class Hue2 extends utils.Adapter {
         const stateIds = [`${baseId}.transition_active`, ...this.getGroupTransitionDeviceStateIds(baseId)];
         const uniqueStateIds = [...new Set(stateIds)];
 
-        for (const stateId of uniqueStateIds) {
-            if (!this.transitionTokens.has(stateId)) continue;
-            this.transitionTokens.delete(stateId);
-            await this.setStateAsync(stateId, false, true);
-        }
+        await this.transitionTracker.cancel(uniqueStateIds);
     }
 
     private async updateTransitionState(commandId: string, payload: Record<string, unknown>): Promise<void> {
@@ -260,25 +256,7 @@ class Hue2 extends utils.Adapter {
     }
 
     private async setTransitionOperation(stateIds: string[], duration: number): Promise<void> {
-        const uniqueStateIds = [...new Set(stateIds)];
-        const token = ++this.nextTransitionToken;
-
-        for (const stateId of uniqueStateIds) {
-            this.transitionTokens.set(stateId, token);
-            await this.setStateAsync(stateId, duration > 0, true);
-        }
-
-        if (duration === 0) return;
-
-        const timer = setTimeout(() => {
-            this.transitionTimers.delete(timer);
-            for (const stateId of uniqueStateIds) {
-                if (this.transitionTokens.get(stateId) !== token) continue;
-                this.transitionTokens.delete(stateId);
-                void this.setStateAsync(stateId, false, true);
-            }
-        }, duration);
-        this.transitionTimers.add(timer);
+        await this.transitionTracker.start(stateIds, duration);
     }
 
     private async recallScene(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
@@ -328,9 +306,7 @@ class Hue2 extends utils.Adapter {
     private onUnload(callback: () => void): void {
         this.eventStream?.stop();
         this.reconnectSync = undefined;
-        for (const timer of this.transitionTimers) clearTimeout(timer);
-        this.transitionTimers.clear();
-        this.transitionTokens.clear();
+        this.transitionTracker.stop();
         callback();
     }
 }
