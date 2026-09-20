@@ -9,9 +9,10 @@ export class ObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
     public async syncDevices(resources: ResourceManager): Promise<void> {
-        await this.adapter.delObjectAsync('devices', { recursive: true });
         await this.adapter.extendObjectAsync('devices', { type: 'folder', common: { name: 'Hue devices' }, native: {} });
-        for (const device of resources.getDevices()) await this.syncDevice(device, resources.getDeviceServices(device));
+        const devices = resources.getDevices();
+        for (const device of devices) await this.syncDevice(device, resources.getDeviceServices(device));
+        await this.removeObsoleteDevices(new Set(devices.map(device => device.id)));
         await this.updateAllEntertainmentStates(resources, true);
     }
 
@@ -27,6 +28,23 @@ export class ObjectManager {
         const baseId = `devices.${deviceId}`;
         await this.updateServiceStateValues(baseId, resource);
         if (typeof resource.enabled === 'boolean') await this.updateEnabledState(baseId, resources.getDeviceServices(deviceId));
+    }
+
+    private async removeObsoleteDevices(currentDeviceIds: Set<string>): Promise<void> {
+        const root = `${this.adapter.namespace}.devices.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${root}*`);
+        const obsolete = new Set<string>();
+
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(root) || object.type !== 'device') continue;
+            const deviceId = id.slice(root.length).split('.')[0];
+            const native = object.native as Record<string, unknown>;
+            if (native.hueResourceType === 'device' && !currentDeviceIds.has(deviceId)) obsolete.add(deviceId);
+        }
+
+        for (const deviceId of obsolete) {
+            await this.adapter.delObjectAsync(`devices.${deviceId}`, { recursive: true });
+        }
     }
 
     private async syncDevice(device: HueDeviceResource, services: HueResource[]): Promise<void> {
