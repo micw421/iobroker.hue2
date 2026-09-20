@@ -18,6 +18,8 @@ class Hue2 extends utils.Adapter {
     private readonly transitionTimers = new Set<ReturnType<typeof setTimeout>>();
     private readonly transitionTokens = new Map<string, number>();
     private nextTransitionToken = 0;
+    private eventStreamHasConnected = false;
+    private reconnectSync?: Promise<void>;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({ ...options, name: 'hue2' });
@@ -83,14 +85,47 @@ class Hue2 extends utils.Adapter {
         this.eventStream?.stop();
         this.eventStream = new HueEventStream({ address: config.bridge, applicationKey: config.applicationKey });
         this.eventStream.start({
-            onConnected: () => this.log.info('Hue API v2 event stream connected'),
-            onDisconnected: () => this.log.debug('Hue API v2 event stream disconnected; reconnect scheduled'),
+            onConnected: () => {
+                const wasConnectedBefore = this.eventStreamHasConnected;
+                this.eventStreamHasConnected = true;
+                this.reconnectSync = this.handleEventStreamConnected(wasConnectedBefore)
+                    .finally(() => { this.reconnectSync = undefined; });
+            },
+            onDisconnected: () => {
+                void this.setStateAsync('info.connection', false, true);
+                this.log.debug('Hue API v2 event stream disconnected; reconnect scheduled');
+            },
             onError: error => this.log.warn(`Hue event stream: ${error.message}`),
             onUpdate: update => this.handleResourceUpdate(update),
         });
     }
 
+    private async handleEventStreamConnected(reconnected: boolean): Promise<void> {
+        if (!reconnected) {
+            await this.setStateAsync('info.connection', true, true);
+            this.log.info('Hue API v2 event stream connected');
+            return;
+        }
+
+        this.log.info('Hue API v2 event stream reconnected; resynchronizing resources');
+        try {
+            if (!this.client || !this.resources) return;
+            const resources = await this.client.getResources();
+            this.resources.replaceAll(resources);
+            await this.objectManager.syncDevices(this.resources);
+            await this.groupObjectManager.sync(this.resources);
+            await this.entertainmentObjectManager.sync(this.resources);
+            await this.setStateAsync('info.connection', true, true);
+            this.log.info(`Hue resync after reconnect completed. Indexed ${this.resources.size} API v2 resources.`);
+        } catch (error) {
+            await this.setStateAsync('info.connection', false, true);
+            const message = error instanceof Error ? error.message : String(error);
+            this.log.warn(`Hue resync after reconnect failed: ${message}`);
+        }
+    }
+
     private async handleResourceUpdate(update: HueResource): Promise<void> {
+        if (this.reconnectSync) await this.reconnectSync;
         if (!this.resources) return;
         const merged = this.resources.patch(update);
         await this.objectManager.updateResource(this.resources, merged);
@@ -292,6 +327,7 @@ class Hue2 extends utils.Adapter {
     private asRecord(value: unknown): Record<string, unknown> | undefined { if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined; return value as Record<string, unknown>; }
     private onUnload(callback: () => void): void {
         this.eventStream?.stop();
+        this.reconnectSync = undefined;
         for (const timer of this.transitionTimers) clearTimeout(timer);
         this.transitionTimers.clear();
         this.transitionTokens.clear();
