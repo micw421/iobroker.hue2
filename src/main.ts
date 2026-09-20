@@ -2,6 +2,7 @@ import * as utils from '@iobroker/adapter-core';
 import { EntertainmentObjectManager } from './lib/entertainment-object-manager';
 import { GroupObjectManager } from './lib/group-object-manager';
 import { HueEventStream } from './lib/hue-event-stream';
+import { HueResourceSynchronizer } from './lib/hue-resource-synchronizer';
 import { HueV2Client, type HueResource } from './lib/hue-v2-client';
 import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
@@ -110,13 +111,18 @@ class Hue2 extends utils.Adapter {
         this.log.info('Hue API v2 event stream reconnected; resynchronizing resources');
         try {
             if (!this.client || !this.resources) return;
-            const resources = await this.client.getResources();
-            this.resources.replaceAll(resources);
-            await this.objectManager.syncDevices(this.resources);
-            await this.groupObjectManager.sync(this.resources);
-            await this.entertainmentObjectManager.sync(this.resources);
+            const synchronizer = new HueResourceSynchronizer(
+                this.client,
+                this.resources,
+                [
+                    { sync: resources => this.objectManager.syncDevices(resources) },
+                    this.groupObjectManager,
+                    this.entertainmentObjectManager,
+                ],
+            );
+            const resourceCount = await synchronizer.resync();
             await this.setStateAsync('info.connection', true, true);
-            this.log.info(`Hue resync after reconnect completed. Indexed ${this.resources.size} API v2 resources.`);
+            this.log.info(`Hue resync after reconnect completed. Indexed ${resourceCount} API v2 resources.`);
         } catch (error) {
             await this.setStateAsync('info.connection', false, true);
             const message = error instanceof Error ? error.message : String(error);
