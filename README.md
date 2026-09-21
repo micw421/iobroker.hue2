@@ -36,7 +36,7 @@ color_temperature
 color
 command
 transition_active
-entertainment_active
+active_entertainment
 motion
 temperature
 light_level
@@ -69,7 +69,7 @@ color_temperature
 color
 command
 transition_active
-entertainment_active
+active_entertainment
 lights.*
 scenes.*
 ```
@@ -142,9 +142,9 @@ For room and zone commands, the state is tracked both on the group and on its co
 
 This is a locally tracked adapter state. Hue does not provide a reliable general-purpose "transition currently active" state through the v2 event stream. Therefore transitions started outside this adapter, for example in the Hue app, are not necessarily represented by `transition_active`.
 
-### `entertainment_active`
+### `active_entertainment`
 
-`entertainment_active` indicates whether the light or group is currently involved in an active Hue Entertainment configuration.
+`active_entertainment` contains the name of the active Hue Entertainment configuration involving the light or group. If no matching Entertainment configuration is active, it is an empty string.
 
 The state is only created where an entertainment relationship exists. It is independent of the normal `on` state: a light being controlled by Hue Entertainment does not cause the adapter to overwrite its regular `on` value.
 
@@ -169,7 +169,7 @@ hue2.0.entertainment.<configuration UUID>
 
 The `lights` channel lists the physical Hue devices that belong to the Entertainment configuration. As with room and zone membership lists, each state ID is the device UUID and its value is the device name.
 
-The existing `entertainment_active` states on devices, rooms and zones remain read-only convenience indicators. To stop an active Entertainment session, use the `stop` state of the corresponding entry below `entertainment`.
+The `active_entertainment` states on devices, rooms and zones are read-only convenience states containing the active configuration name. To stop an active Entertainment session, use the `stop` state of the corresponding entry below `entertainment`.
 
 ### `lights`
 
