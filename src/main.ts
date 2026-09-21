@@ -26,7 +26,7 @@ class Hue2 extends utils.Adapter {
         this.objectManager = new ObjectManager(this);
         this.groupObjectManager = new GroupObjectManager(this);
         this.entertainmentObjectManager = new EntertainmentObjectManager(this);
-        this.transitionTracker = new TransitionTracker((stateId, value) => this.setStateAsync(stateId, value, true));
+        this.transitionTracker = new TransitionTracker(async (stateId, value) => { await this.setStateAsync(stateId, value, true); });
         this.on('ready', this.onReady.bind(this));
         this.on('stateChange', this.onStateChange.bind(this));
         this.on('unload', this.onUnload.bind(this));
