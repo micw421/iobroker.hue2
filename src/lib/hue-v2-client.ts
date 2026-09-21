@@ -16,15 +16,18 @@ export interface HueResponse<T> {
 export interface HueV2ClientOptions {
     address: string;
     applicationKey: string;
+    retry429DelaysMs?: number[];
 }
 
 /** Minimal client for the Philips Hue CLIP API v2. */
 export class HueV2Client {
     private readonly baseUrl: string;
     private readonly http: AxiosInstance;
+    private readonly retry429DelaysMs: number[];
 
     public constructor(options: HueV2ClientOptions) {
         this.baseUrl = `https://${options.address}/clip/v2`;
+        this.retry429DelaysMs = options.retry429DelaysMs ?? [250, 500, 1_000];
         this.http = axios.create({
             headers: {
                 'hue-application-key': options.applicationKey,
@@ -46,15 +49,29 @@ export class HueV2Client {
 
     /** Update one Hue v2 resource using its resource type and UUID. */
     public async updateResource(type: string, id: string, payload: Record<string, unknown>): Promise<void> {
-        try {
-            const response = await this.http.put<HueResponse<unknown>>(
-                `${this.baseUrl}/resource/${encodeURIComponent(type)}/${encodeURIComponent(id)}`,
-                payload,
-            );
-            this.throwHueErrors(response.data.errors);
-        } catch (error) {
-            throw this.toHueError(error);
+        const url = `${this.baseUrl}/resource/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
+
+        for (let attempt = 0; ; attempt++) {
+            try {
+                const response = await this.http.put<HueResponse<unknown>>(url, payload);
+                this.throwHueErrors(response.data.errors);
+                return;
+            } catch (error) {
+                if (this.isHttp429(error) && attempt < this.retry429DelaysMs.length) {
+                    await this.sleep(this.retry429DelaysMs[attempt]);
+                    continue;
+                }
+                throw this.toHueError(error);
+            }
         }
+    }
+
+    private isHttp429(error: unknown): boolean {
+        return error instanceof AxiosError && error.response?.status === 429;
+    }
+
+    private sleep(delayMs: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, delayMs));
     }
 
     private throwHueErrors(errors: Array<{ description: string }>): void {
