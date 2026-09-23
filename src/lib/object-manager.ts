@@ -63,6 +63,7 @@ export class ObjectManager {
         if (light) {
             await this.createState(`${baseId}.command`, { name: 'Command', type: 'string', role: 'json', value: '', resource: light, write: true });
             await this.createState(`${baseId}.transition_active`, { name: 'Transition active', type: 'boolean', role: 'indicator', value: false, resource: light });
+            await this.createState(`${baseId}.identify`, { name: 'Identify', type: 'boolean', role: 'button', value: false, resource: device, write: true });
         }
         for (const service of services) await this.syncServiceStates(baseId, service);
     }
