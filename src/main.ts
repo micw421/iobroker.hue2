@@ -179,6 +179,9 @@ class Hue2 extends utils.Adapter {
                     await this.cancelTransitionForWrite(relativeId);
                     break;
                 case 'command': await this.writeCommand(relativeId, native, state.val); break;
+                case 'identify':
+                    await this.writeIdentify(relativeId, native, state.val);
+                    return;
                 case 'start':
                 case 'stop':
                     await this.writeEntertainmentAction(relativeId, native, property, state.val);
@@ -196,6 +199,15 @@ class Hue2 extends utils.Adapter {
             const message = error instanceof Error ? error.message : String(error);
             this.log.warn(`Could not write ${relativeId} to Hue Bridge: ${message}`);
         }
+    }
+
+    private async writeIdentify(relativeId: string, native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
+        const pressed = this.requireBoolean(value, 'identify');
+        if (pressed) {
+            await this.writeSingleResource(native, { identify: { action: 'identify' } });
+            this.log.debug(`Sent Hue identify action for ${relativeId}`);
+        }
+        await this.setStateAsync(relativeId, false, true);
     }
 
     private async writeEntertainmentAction(relativeId: string, native: Record<string, unknown>, action: 'start' | 'stop', value: ioBroker.StateValue): Promise<void> {
