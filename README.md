@@ -37,6 +37,7 @@ color
 command
 transition_active
 active_entertainment
+identify
 motion
 temperature
 light_level
@@ -131,6 +132,26 @@ Stop the running dim operation:
 ```
 
 The `command` state is useful for Hue v2 features that do not have a dedicated ioBroker state. Dedicated states such as `on`, `dimming` and `color_temperature` should normally be preferred for simple changes.
+
+### `identify`
+
+Light devices expose a writable `identify` button:
+
+```text
+hue2.0.devices.<device UUID>.identify
+```
+
+Writing `true` sends the Hue v2 device identify action:
+
+```json
+{
+  "identify": {
+    "action": "identify"
+  }
+}
+```
+
+Hue performs a single visual identify cycle for the device, and the ioBroker button is reset to `false` afterwards. This is useful for short feedback signals, for example when a long-press dim operation reaches its upper limit.
 
 ### `transition_active`
 
