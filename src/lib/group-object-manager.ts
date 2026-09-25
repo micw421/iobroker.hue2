@@ -32,9 +32,19 @@ export class GroupObjectManager {
             const groupedLight = this.getServiceReferences(container).filter(reference => reference.rtype === 'grouped_light').map(reference => resources.getById(reference.rid)).find((candidate): candidate is HueResource => candidate !== undefined);
             const baseId = `${root}.${container.id}`;
             await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id } });
-            await this.createInfoState(`${baseId}.name`, 'Name', name);
+
+            const legacyNameId = `${baseId}.name`;
+            if (await this.adapter.getObjectAsync(legacyNameId)) await this.adapter.delObjectAsync(legacyNameId);
+
             const archetype = this.asString(metadata?.archetype);
-            if (type === 'room' && archetype !== undefined) await this.createSimpleStringState(`${baseId}.archetype`, 'Archetype', archetype);
+            if (archetype !== undefined) {
+                await this.adapter.extendObjectAsync(`${baseId}.info`, { type: 'channel', common: { name: 'Information' }, native: {} });
+                await this.createSimpleStringState(`${baseId}.info.archetype`, 'Archetype', archetype);
+            }
+
+            const legacyArchetypeId = `${baseId}.archetype`;
+            if (await this.adapter.getObjectAsync(legacyArchetypeId)) await this.adapter.delObjectAsync(legacyArchetypeId);
+
             await this.createSimpleStringState(`${baseId}.active_scene`, 'Active scene', this.getActiveSceneName(resources, container.id, container.type));
             const allOn = this.getGroupAllOn(container, resources);
             if (allOn !== undefined) await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', allOn, 'member_lights');
