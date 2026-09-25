@@ -10,6 +10,7 @@ function resource(value: HueResource): HueResource {
 function createAdapterMock() {
     const objects = new Map<string, any>();
     const states = new Map<string, unknown>();
+    const foreignObjects = new Map<string, any>();
     const deleted: string[] = [];
 
     const adapter = {
@@ -34,6 +35,12 @@ function createAdapterMock() {
         async getObjectAsync(id: string) {
             return objects.get(id) ?? null;
         },
+        async getForeignObjectAsync(id: string) {
+            return foreignObjects.get(id) ?? null;
+        },
+        async setForeignObjectAsync(id: string, object: any) {
+            foreignObjects.set(id, object);
+        },
         async getForeignObjectsAsync(pattern: string) {
             const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
             const result: Record<string, any> = {};
@@ -41,7 +48,14 @@ function createAdapterMock() {
                 const fullId = id.startsWith('hue2.0.') ? id : `hue2.0.${id}`;
                 if (fullId.startsWith(prefix)) result[fullId] = object;
             }
+            for (const [id, object] of foreignObjects) {
+                if (id.startsWith(prefix)) result[id] = object;
+            }
             return result;
+        },
+        async delForeignObjectAsync(id: string) {
+            deleted.push(id);
+            foreignObjects.delete(id);
         },
         async delObjectAsync(id: string, options?: { recursive?: boolean }) {
             deleted.push(id);
@@ -59,7 +73,7 @@ function createAdapterMock() {
         },
     };
 
-    return { adapter: adapter as any, objects, states, deleted };
+    return { adapter: adapter as any, objects, states, foreignObjects, deleted };
 }
 
 function createGroupResources(type: 'room' | 'zone', allOn: boolean): ResourceManager {
@@ -97,7 +111,9 @@ function createGroupResources(type: 'room' | 'zone', allOn: boolean): ResourceMa
         resource({
             id: `${type}-1`,
             type,
-            metadata: { name: type === 'room' ? 'Living room' : 'Downstairs' },
+            metadata: type === 'room'
+                ? { name: 'Living room', archetype: 'living_room' }
+                : { name: 'Downstairs' },
             children: [
                 { rid: 'device-1', rtype: 'device' },
                 { rid: 'device-2', rtype: 'device' },
@@ -118,6 +134,31 @@ describe('GroupObjectManager', () => {
         expect(objects.get('rooms.room-1.lights.device-2')?.common.name).toBe('Floor lamp');
         expect(states.get('rooms.room-1.lights.device-1')).toBe('Ceiling');
         expect(states.get('rooms.room-1.lights.device-2')).toBe('Floor lamp');
+    });
+
+    it('exposes the Hue room archetype', async () => {
+        const { adapter, states } = createAdapterMock();
+
+        await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
+
+        expect(states.get('rooms.room-1.archetype')).toBe('living_room');
+    });
+
+    it('mirrors Hue rooms to ioBroker room enums', async () => {
+        const { adapter, foreignObjects } = createAdapterMock();
+
+        await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
+
+        const room = foreignObjects.get('enum.rooms.hue2_room-1');
+        expect(room?.type).toBe('enum');
+        expect(room?.common.name).toBe('Living room');
+        expect(room?.common.members).toEqual([
+            'hue2.0.rooms.room-1',
+            'hue2.0.devices.device-1',
+            'hue2.0.devices.device-2',
+        ]);
+        expect(room?.native.hue2Managed).toBe(true);
+        expect(room?.native.hueRoomResourceId).toBe('room-1');
     });
 
     it('sets all_on true only when every room light is on', async () => {
