@@ -141,7 +141,9 @@ describe('GroupObjectManager', () => {
 
         await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
 
-        expect(states.get('rooms.room-1.archetype')).toBe('living_room');
+        expect(states.get('rooms.room-1.info.archetype')).toBe('living_room');
+        expect(states.has('rooms.room-1.name')).toBe(false);
+        expect(states.has('rooms.room-1.archetype')).toBe(false);
     });
 
     it('mirrors Hue rooms to ioBroker room enums', async () => {
