@@ -70,6 +70,7 @@ describe('ObjectManager identify', () => {
         expect(identify?.native.hueResourceId).toBe('device-1');
         expect(identify?.native.hueResourceType).toBe('device');
         expect(states.get('devices.device-1.identify')).toBe(false);
+        expect(states.has('devices.device-1.info.name')).toBe(false);
     });
 
     it('does not create identify for devices without a light service', async () => {
