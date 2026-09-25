@@ -62,6 +62,7 @@ A room or zone can expose states such as:
 
 ```text
 name
+archetype
 active_scene
 all_on
 on
@@ -74,6 +75,28 @@ active_entertainment
 lights.*
 scenes.*
 ```
+
+### ioBroker room enums
+
+Hue rooms are mirrored into ioBroker's native room enumeration:
+
+```text
+enum.rooms.hue2_<room UUID>
+```
+
+The enum name is the Hue room name. Its members include the corresponding `hue2.0.rooms.<room UUID>` channel and all Hue devices that belong to that room. This makes the room assignment visible in ioBroker's object browser and available to scripts using `enum.rooms`.
+
+The enum ID is UUID-based so renaming a Hue room does not create a new ioBroker room. Members from other adapters that were manually added to a Hue-managed room enum are preserved during synchronization. Hue-managed room enums are removed when the corresponding Hue room no longer exists.
+
+### `archetype`
+
+Hue rooms expose their Hue room archetype as a read-only string state, for example:
+
+```text
+hue2.0.rooms.<room UUID>.archetype = "living_room"
+```
+
+The value comes from the Hue room metadata and can be used for visualization or icon selection.
 
 ## Important states
 
