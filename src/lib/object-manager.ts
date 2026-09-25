@@ -52,7 +52,8 @@ export class ObjectManager {
         const metadata = this.getDeviceMetadata(device);
         await this.adapter.extendObjectAsync(baseId, { type: 'device', common: { name: metadata.name }, native: { hueResourceId: device.id, hueResourceType: device.type } });
         await this.adapter.extendObjectAsync(`${baseId}.info`, { type: 'channel', common: { name: 'Information' }, native: {} });
-        await this.createInfoState(`${baseId}.info.name`, 'Name', metadata.name);
+        const legacyNameId = `${baseId}.info.name`;
+        if (await this.adapter.getObjectAsync(legacyNameId)) await this.adapter.delObjectAsync(legacyNameId);
         await this.createOptionalInfoState(`${baseId}.info.model_id`, 'Model ID', metadata.model_id);
         await this.createOptionalInfoState(`${baseId}.info.manufacturer_name`, 'Manufacturer', metadata.manufacturer_name);
         await this.createOptionalInfoState(`${baseId}.info.product_name`, 'Product name', metadata.product_name);
