@@ -61,8 +61,7 @@ hue2.0.zones.<zone UUID>
 A room or zone can expose states such as:
 
 ```text
-name
-archetype
+info.archetype
 active_scene
 all_on
 on
@@ -93,10 +92,10 @@ The enum ID is UUID-based so renaming a Hue room does not create a new ioBroker 
 Hue rooms expose their Hue room archetype as a read-only string state, for example:
 
 ```text
-hue2.0.rooms.<room UUID>.archetype = "living_room"
+hue2.0.rooms.<room UUID>.info.archetype = "living_room"
 ```
 
-The value comes from the Hue room metadata and can be used for visualization or icon selection.
+The value comes from the Hue room metadata and can be used for visualization or icon selection. Room and device names are stored in the parent object's `common.name`; duplicate `name` states are intentionally not created.
 
 ## Important states
 
