@@ -13,6 +13,7 @@ export class GroupObjectManager {
         if (legacyScenes) await this.adapter.delObjectAsync('scenes', { recursive: true });
         await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources);
         await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources);
+        await this.syncIoBrokerRooms(resources);
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
@@ -32,6 +33,8 @@ export class GroupObjectManager {
             const baseId = `${root}.${container.id}`;
             await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id } });
             await this.createInfoState(`${baseId}.name`, 'Name', name);
+            const archetype = this.asString(metadata?.archetype);
+            if (type === 'room' && archetype !== undefined) await this.createSimpleStringState(`${baseId}.archetype`, 'Archetype', archetype);
             await this.createSimpleStringState(`${baseId}.active_scene`, 'Active scene', this.getActiveSceneName(resources, container.id, container.type));
             const allOn = this.getGroupAllOn(container, resources);
             if (allOn !== undefined) await this.createDerivedBooleanState(`${baseId}.all_on`, 'All on', allOn, 'member_lights');
@@ -118,6 +121,56 @@ export class GroupObjectManager {
             await this.adapter.setStateAsync(`${baseId}.lights.${deviceId}`, name, true);
         }
         await this.removeObsoleteLightObjects(baseId, new Set(deviceIds));
+    }
+
+    private async syncIoBrokerRooms(resources: ResourceManager): Promise<void> {
+        const rooms = resources.getByType('room');
+        const currentEnumIds = new Set<string>();
+
+        for (const room of rooms) {
+            const metadata = this.asRecord(room.metadata);
+            const name = this.asString(metadata?.name) ?? room.id;
+            const enumId = `enum.rooms.hue2_${room.id}`;
+            currentEnumIds.add(enumId);
+
+            const existing = await this.adapter.getForeignObjectAsync(enumId);
+            const existingMembers = existing?.type === 'enum' && Array.isArray(existing.common.members)
+                ? existing.common.members.filter((member): member is string => typeof member === 'string')
+                : [];
+
+            const managedPrefixes = [
+                `${this.adapter.namespace}.devices.`,
+                `${this.adapter.namespace}.rooms.`,
+            ];
+            const preservedMembers = existingMembers.filter(member =>
+                !managedPrefixes.some(prefix => member.startsWith(prefix)),
+            );
+
+            const members = [
+                ...preservedMembers,
+                `${this.adapter.namespace}.rooms.${room.id}`,
+                ...this.getGroupDeviceIds(room, resources).map(deviceId => `${this.adapter.namespace}.devices.${deviceId}`),
+            ];
+
+            await this.adapter.setForeignObjectAsync(enumId, {
+                type: 'enum',
+                common: {
+                    name,
+                    members: [...new Set(members)],
+                },
+                native: {
+                    hue2Managed: true,
+                    hueRoomResourceId: room.id,
+                },
+            });
+        }
+
+        const existingEnums = await this.adapter.getForeignObjectsAsync('enum.rooms.hue2_*');
+        for (const [id, object] of Object.entries(existingEnums)) {
+            if (currentEnumIds.has(id)) continue;
+            const native = object.native as Record<string, unknown>;
+            if (native.hue2Managed === true) await this.adapter.delForeignObjectAsync(id);
+        }
     }
 
     private async removeObsoleteContainers(root: 'rooms' | 'zones', type: 'room' | 'zone', currentIds: Set<string>): Promise<void> {
