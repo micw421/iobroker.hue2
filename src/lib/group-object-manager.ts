@@ -4,16 +4,22 @@ import type { HueResourceReference, ResourceManager } from './resource-manager';
 interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; unit?: string; min?: number; max?: number; write?: boolean; }
 interface ColorTemperatureRange { min?: number; max?: number; }
 
+export interface GroupSyncOptions {
+    createIoBrokerRooms?: boolean;
+    createLightStates?: boolean;
+}
+
 /** Creates rooms and zones with their Hue API v2 scenes nested below the owning group. */
 export class GroupObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
-    public async sync(resources: ResourceManager): Promise<void> {
+    public async sync(resources: ResourceManager, options: GroupSyncOptions = {}): Promise<void> {
         const legacyScenes = await this.adapter.getObjectAsync('scenes');
         if (legacyScenes) await this.adapter.delObjectAsync('scenes', { recursive: true });
-        await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources);
-        await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources);
-        await this.syncIoBrokerRooms(resources);
+        await this.syncGroupedContainerType('room', 'rooms', 'Hue rooms', resources, options.createLightStates === true);
+        await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources, options.createLightStates === true);
+        if (options.createIoBrokerRooms === true) await this.syncIoBrokerRooms(resources);
+        else await this.removeManagedIoBrokerRooms();
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
@@ -24,7 +30,7 @@ export class GroupObjectManager {
         for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) for (const container of resources.getByType(type)) if (this.getServiceReferences(container).some(reference => reference.rid === resource.id)) await this.updateGroupedLightValues(`${root}.${container.id}`, resource);
     }
 
-    private async syncGroupedContainerType(type: 'room' | 'zone', root: 'rooms' | 'zones', rootName: string, resources: ResourceManager): Promise<void> {
+    private async syncGroupedContainerType(type: 'room' | 'zone', root: 'rooms' | 'zones', rootName: string, resources: ResourceManager, createLightStates: boolean): Promise<void> {
         await this.adapter.extendObjectAsync(root, { type: 'folder', common: { name: rootName }, native: {} });
         const containers = resources.getByType(type);
         for (const container of containers) {
@@ -54,7 +60,8 @@ export class GroupObjectManager {
                 await this.createState(`${baseId}.transition_active`, { name: 'Transition active', type: 'boolean', role: 'indicator', value: false, resource: groupedLight });
                 await this.syncGroupedLightStates(baseId, groupedLight, this.getGroupColorTemperatureRange(container, resources));
             }
-            await this.syncGroupLights(baseId, container, resources);
+            if (createLightStates) await this.syncGroupLights(baseId, container, resources);
+            else await this.removeGroupLights(baseId);
             await this.syncScenesForGroup(baseId, container.id, container.type, resources);
         }
         await this.removeObsoleteContainers(root, type, new Set(containers.map(container => container.id)));
@@ -113,6 +120,11 @@ export class GroupObjectManager {
         const lights: HueResource[] = [];
         for (const deviceId of this.getGroupDeviceIds(container, resources)) for (const service of resources.getDeviceServices(deviceId)) if (service.type === 'light') lights.push(service);
         return lights;
+    }
+
+    private async removeGroupLights(baseId: string): Promise<void> {
+        const lightsObject = await this.adapter.getObjectAsync(`${baseId}.lights`);
+        if (lightsObject) await this.adapter.delObjectAsync(`${baseId}.lights`, { recursive: true });
     }
 
     private async syncGroupLights(baseId: string, container: HueResource, resources: ResourceManager): Promise<void> {
@@ -178,6 +190,14 @@ export class GroupObjectManager {
         const existingEnums = await this.adapter.getForeignObjectsAsync('enum.rooms.hue2_*');
         for (const [id, object] of Object.entries(existingEnums)) {
             if (currentEnumIds.has(id)) continue;
+            const native = object.native as Record<string, unknown>;
+            if (native.hue2Managed === true) await this.adapter.delForeignObjectAsync(id);
+        }
+    }
+
+    private async removeManagedIoBrokerRooms(): Promise<void> {
+        const existingEnums = await this.adapter.getForeignObjectsAsync('enum.rooms.hue2_*');
+        for (const [id, object] of Object.entries(existingEnums)) {
             const native = object.native as Record<string, unknown>;
             if (native.hue2Managed === true) await this.adapter.delForeignObjectAsync(id);
         }
