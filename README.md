@@ -77,11 +77,13 @@ scenes.*
 
 ### ioBroker room enums
 
-Hue rooms are mirrored into ioBroker's native room enumeration:
+Hue rooms can optionally be mirrored into ioBroker's native room enumeration:
 
 ```text
 enum.rooms.hue2_<room UUID>
 ```
+
+Enable `createIoBrokerRooms` in the adapter settings to create these enums. The option is disabled by default.
 
 The enum name is the Hue room name. Its members include the corresponding `hue2.0.rooms.<room UUID>` channel and all Hue devices that belong to that room. This makes the room assignment visible in ioBroker's object browser and available to scripts using `enum.rooms`.
 
@@ -216,7 +218,8 @@ The `active_entertainment` states on devices, rooms and zones are read-only conv
 
 ### `lights`
 
-Rooms and zones contain a `lights` channel listing their member lights:
+Rooms and zones can optionally contain a `lights` channel listing their member lights. Enable `createLightStates` in the adapter settings; the option is disabled by default.
+
 
 ```text
 hue2.0.rooms.<room UUID>.lights.<device UUID>
@@ -289,6 +292,8 @@ The adapter expects the Hue Bridge address and Hue application key in the instan
 - `bridge`
 - `applicationKey`
 - `dimmingControlsPower` (default: `false`): if enabled, writing `dimming > 0` also turns the light or group on. Writing `dimming = 0` turns it off. With this option disabled, `dimming` only changes brightness and does not implicitly change the power state.
+- `createIoBrokerRooms` (default: `false`): mirror Hue rooms into `enum.rooms` and assign the contained Hue devices.
+- `createLightStates` (default: `false`): create `rooms/zones.<uuid>.lights.*` membership states.
 
 The `dimmingControlsPower` option only affects direct writes to the `dimming` state. Raw JSON written to `command` is sent as specified and is not modified by this option.
 
