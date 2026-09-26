@@ -73,6 +73,47 @@ describe('ObjectManager identify', () => {
         expect(states.has('devices.device-1.info.name')).toBe(false);
     });
 
+    it('adds a Zigbee2MQTT product image for known Hue model IDs', async () => {
+        const { adapter, objects } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'GU10' },
+                product_data: { model_id: 'LTG002' },
+                services: [{ rid: 'light-1', rtype: 'light' }],
+            }),
+            resource({
+                id: 'light-1',
+                type: 'light',
+                on: { on: true },
+            }),
+        ]);
+
+        await new ObjectManager(adapter).syncDevices(resources);
+
+        expect(objects.get('devices.device-1')?.common.icon).toBe(
+            'https://www.zigbee2mqtt.io/images/devices/929001953301.png',
+        );
+    });
+
+    it('leaves the icon unset for unknown Hue model IDs', async () => {
+        const { adapter, objects } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'Unknown' },
+                product_data: { model_id: 'UNKNOWN' },
+                services: [],
+            }),
+        ]);
+
+        await new ObjectManager(adapter).syncDevices(resources);
+
+        expect(objects.get('devices.device-1')?.common.icon).toBeUndefined();
+    });
+
     it('does not create identify for devices without a light service', async () => {
         const { adapter, objects } = createAdapterMock();
         const resources = new ResourceManager([
