@@ -128,7 +128,7 @@ describe('GroupObjectManager', () => {
         const { adapter, objects, states } = createAdapterMock();
         const manager = new GroupObjectManager(adapter);
 
-        await manager.sync(createGroupResources('room', true));
+        await manager.sync(createGroupResources('room', true), { createLightStates: true });
 
         expect(objects.get('rooms.room-1.lights.device-1')?.common.name).toBe('Ceiling');
         expect(objects.get('rooms.room-1.lights.device-2')?.common.name).toBe('Floor lamp');
@@ -149,7 +149,7 @@ describe('GroupObjectManager', () => {
     it('mirrors Hue rooms to ioBroker room enums', async () => {
         const { adapter, foreignObjects } = createAdapterMock();
 
-        await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
+        await new GroupObjectManager(adapter).sync(createGroupResources('room', true), { createIoBrokerRooms: true });
 
         const room = foreignObjects.get('enum.rooms.hue2_room-1');
         expect(room?.type).toBe('enum');
@@ -161,6 +161,33 @@ describe('GroupObjectManager', () => {
         ]);
         expect(room?.native.hue2Managed).toBe(true);
         expect(room?.native.hueRoomResourceId).toBe('room-1');
+    });
+
+    it('does not create ioBroker room enums or light membership states by default', async () => {
+        const { adapter, objects, foreignObjects } = createAdapterMock();
+
+        await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
+
+        expect(foreignObjects.has('enum.rooms.hue2_room-1')).toBe(false);
+        expect(objects.has('rooms.room-1.lights')).toBe(false);
+        expect(objects.has('rooms.room-1.lights.device-1')).toBe(false);
+    });
+
+    it('removes previously created optional objects when their settings are disabled', async () => {
+        const { adapter, objects, foreignObjects, deleted } = createAdapterMock();
+        const manager = new GroupObjectManager(adapter);
+        const resources = createGroupResources('room', true);
+
+        await manager.sync(resources, { createIoBrokerRooms: true, createLightStates: true });
+        expect(foreignObjects.has('enum.rooms.hue2_room-1')).toBe(true);
+        expect(objects.has('rooms.room-1.lights')).toBe(true);
+
+        await manager.sync(resources);
+
+        expect(foreignObjects.has('enum.rooms.hue2_room-1')).toBe(false);
+        expect(objects.has('rooms.room-1.lights')).toBe(false);
+        expect(deleted).toContain('enum.rooms.hue2_room-1');
+        expect(deleted).toContain('rooms.room-1.lights');
     });
 
     it('sets all_on true only when every room light is on', async () => {
@@ -177,7 +204,7 @@ describe('GroupObjectManager', () => {
         const { adapter, states } = createAdapterMock();
         const manager = new GroupObjectManager(adapter);
 
-        await manager.sync(createGroupResources('zone', false));
+        await manager.sync(createGroupResources('zone', false), { createLightStates: true });
 
         expect(states.get('zones.zone-1.all_on')).toBe(false);
         expect(states.get('zones.zone-1.lights.device-1')).toBe('Ceiling');
