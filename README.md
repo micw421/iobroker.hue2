@@ -51,7 +51,7 @@ Not every state is created for every device. For example, `color` is only availa
 
 ### Device icons
 
-For known Philips Hue model IDs, the adapter assigns the corresponding Zigbee2MQTT product image as the ioBroker device icon. The image is referenced externally and is not bundled with this adapter.
+For known Philips Hue model IDs, the adapter uses the corresponding Zigbee2MQTT product image as the ioBroker device icon. The image is downloaded on demand into ioBroker's adapter admin storage and `common.icon` points to that local cached file. The product images are not bundled with this adapter.
 
 Currently mapped examples include `LTG002`, `LTG005`, `LTW013`, `LCG002`, `LCL001`, `SML001`, `1743530P7` and `440400982841`. Unknown model IDs simply keep the default ioBroker device icon.
 
