@@ -120,6 +120,7 @@ class Hue2 extends utils.Adapter {
         this.log.info('Hue API v2 event stream reconnected; resynchronizing resources');
         try {
             if (!this.client || !this.resources) return;
+            const config = this.config as Hue2Config;
             const synchronizer = new HueResourceSynchronizer(
                 this.client,
                 this.resources,
