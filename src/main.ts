@@ -8,7 +8,13 @@ import { ObjectManager } from './lib/object-manager';
 import { ResourceManager } from './lib/resource-manager';
 import { TransitionTracker } from './lib/transition-tracker';
 
-interface Hue2Config extends ioBroker.AdapterConfig { bridge: string; applicationKey: string; dimmingControlsPower?: boolean; }
+interface Hue2Config extends ioBroker.AdapterConfig {
+    bridge: string;
+    applicationKey: string;
+    dimmingControlsPower?: boolean;
+    createIoBrokerRooms?: boolean;
+    createLightStates?: boolean;
+}
 
 class Hue2 extends utils.Adapter {
     private client?: HueV2Client;
@@ -45,7 +51,10 @@ class Hue2 extends utils.Adapter {
             const resources = await this.client.getResources();
             this.resources = new ResourceManager(resources);
             await this.objectManager.syncDevices(this.resources);
-            await this.groupObjectManager.sync(this.resources);
+            await this.groupObjectManager.sync(this.resources, {
+                createIoBrokerRooms: config.createIoBrokerRooms === true,
+                createLightStates: config.createLightStates === true,
+            });
             await this.entertainmentObjectManager.sync(this.resources);
             this.subscribeStates('devices.*');
             this.subscribeStates('rooms.*');
@@ -116,7 +125,10 @@ class Hue2 extends utils.Adapter {
                 this.resources,
                 [
                     { sync: resources => this.objectManager.syncDevices(resources) },
-                    this.groupObjectManager,
+                    { sync: resources => this.groupObjectManager.sync(resources, {
+                        createIoBrokerRooms: config.createIoBrokerRooms === true,
+                        createLightStates: config.createLightStates === true,
+                    }) },
                     this.entertainmentObjectManager,
                 ],
             );
