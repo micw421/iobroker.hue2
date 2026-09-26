@@ -36,6 +36,15 @@ function createAdapterMock() {
         async getForeignObjectsAsync() {
             return {};
         },
+        async fileExistsAsync() {
+            return true;
+        },
+        async writeFileAsync() {},
+        log: {
+            debug() {},
+            warn() {},
+        },
+        name: 'hue2',
         async delObjectAsync() {},
     };
 
@@ -92,7 +101,8 @@ describe('ObjectManager identify', () => {
 
         await new ObjectManager(adapter).syncDevices(resources);
 
-        expect(objects.get('devices.device-1')?.common.icon).toBe(
+        expect(objects.get('devices.device-1')?.common.icon).toBe('img/devices/LTG002.png');
+        expect(objects.get('devices.device-1')?.native.modelIcon).toBe(
             'https://www.zigbee2mqtt.io/images/devices/929001953301.png',
         );
     });
