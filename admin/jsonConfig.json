@@ -18,6 +18,18 @@
       "label": "Turn lights on/off via dimming",
       "help": "If enabled, writing a dimming value greater than 0 turns the light/group on. Writing 0 turns it off.",
       "newLine": true
+    },
+    "createIoBrokerRooms": {
+      "type": "checkbox",
+      "label": "Create ioBroker rooms",
+      "help": "Mirror Hue rooms to ioBroker enum.rooms and assign the contained Hue devices.",
+      "newLine": true
+    },
+    "createLightStates": {
+      "type": "checkbox",
+      "label": "Create light membership states",
+      "help": "Create rooms/zones .lights.* states listing the contained Hue light devices.",
+      "newLine": true
     }
   }
 }
