@@ -61,7 +61,8 @@ export class ObjectManager {
     private async syncDevice(device: HueDeviceResource, services: HueResource[]): Promise<void> {
         const baseId = `devices.${device.id}`;
         const metadata = this.getDeviceMetadata(device);
-        const icon = this.getDeviceIcon(metadata.model_id);
+        const modelIcon = this.getDeviceIcon(metadata.model_id);
+        const icon = modelIcon ? await this.ensureLocalDeviceIcon(metadata.model_id!, modelIcon) : undefined;
         await this.adapter.extendObjectAsync(baseId, {
             type: 'device',
             common: {
@@ -71,6 +72,7 @@ export class ObjectManager {
             native: {
                 hueResourceId: device.id,
                 hueResourceType: device.type,
+                ...(modelIcon ? { modelIcon } : {}),
             },
         });
         await this.adapter.extendObjectAsync(`${baseId}.info`, { type: 'channel', common: { name: 'Information' }, native: {} });
@@ -159,6 +161,25 @@ export class ObjectManager {
         if (!modelId) return undefined;
         const imageModel = ZIGBEE2MQTT_DEVICE_IMAGES[modelId];
         return imageModel ? `https://www.zigbee2mqtt.io/images/devices/${imageModel}.png` : undefined;
+    }
+
+    private async ensureLocalDeviceIcon(modelId: string, url: string): Promise<string | undefined> {
+        const target = `img/devices/${modelId.replace(/[^a-z0-9_.-]/gi, '-')}.png`;
+        const namespace = `${this.adapter.name}.admin`;
+
+        try {
+            if (await this.adapter.fileExistsAsync(namespace, target)) return target;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = Buffer.from(await response.arrayBuffer());
+            await this.adapter.writeFileAsync(namespace, target, data);
+            this.adapter.log.debug(`Downloaded device icon ${url} to ${target}`);
+            return target;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.adapter.log.warn(`Could not download device icon for ${modelId}: ${message}`);
+            return undefined;
+        }
     }
 
     private getDeviceMetadata(d: HueDeviceResource): DeviceMetadata { const m = this.asRecord(d.metadata); const p = this.asRecord(d.product_data); return { name: this.asString(m?.name) ?? d.id, model_id: this.asString(p?.model_id), manufacturer_name: this.asString(p?.manufacturer_name), product_name: this.asString(p?.product_name), archetype: this.asString(m?.archetype) }; }
