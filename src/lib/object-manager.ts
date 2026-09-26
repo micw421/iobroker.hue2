@@ -4,6 +4,17 @@ import type { HueDeviceResource, ResourceManager } from './resource-manager';
 interface DeviceMetadata { name: string; model_id?: string; manufacturer_name?: string; product_name?: string; archetype?: string; }
 interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; write?: boolean; unit?: string; min?: number; max?: number; }
 
+const ZIGBEE2MQTT_DEVICE_IMAGES: Record<string, string> = {
+    LTG002: '929001953301',
+    LTG005: '929003666701',
+    LTW013: '8718696598283',
+    LCG002: '929001953101',
+    LCL001: '8718699703424',
+    SML001: '9290012607',
+    '1743530P7': '17435-30-P7',
+    '440400982841': '915005733701',
+};
+
 /** Creates and updates the flat ioBroker device model for Hue v2 resources. */
 export class ObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
@@ -50,7 +61,18 @@ export class ObjectManager {
     private async syncDevice(device: HueDeviceResource, services: HueResource[]): Promise<void> {
         const baseId = `devices.${device.id}`;
         const metadata = this.getDeviceMetadata(device);
-        await this.adapter.extendObjectAsync(baseId, { type: 'device', common: { name: metadata.name }, native: { hueResourceId: device.id, hueResourceType: device.type } });
+        const icon = this.getDeviceIcon(metadata.model_id);
+        await this.adapter.extendObjectAsync(baseId, {
+            type: 'device',
+            common: {
+                name: metadata.name,
+                ...(icon ? { icon } : {}),
+            },
+            native: {
+                hueResourceId: device.id,
+                hueResourceType: device.type,
+            },
+        });
         await this.adapter.extendObjectAsync(`${baseId}.info`, { type: 'channel', common: { name: 'Information' }, native: {} });
         const legacyNameId = `${baseId}.info.name`;
         if (await this.adapter.getObjectAsync(legacyNameId)) await this.adapter.delObjectAsync(legacyNameId);
@@ -133,6 +155,12 @@ export class ObjectManager {
     private async createState(id: string, d: StateDefinition, nativeExtra: Record<string, unknown> = {}): Promise<void> { const common: ioBroker.StateCommon = { name: d.name, type: d.type, role: d.role, read: true, write: d.write ?? false }; if (d.unit !== undefined) common.unit = d.unit; if (d.min !== undefined) common.min = d.min; if (d.max !== undefined) common.max = d.max; await this.adapter.extendObjectAsync(id, { type: 'state', common, native: { hueResourceId: d.resource.id, hueResourceType: d.resource.type, idV1: d.resource.id_v1, ...nativeExtra } }); if (d.value !== undefined) await this.adapter.setStateAsync(id, d.value, true); }
     private async createOptionalInfoState(id: string, name: string, value: string | undefined): Promise<void> { if (value !== undefined) await this.createInfoState(id, name, value); }
     private async createInfoState(id: string, name: string, value: string): Promise<void> { await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: {} }); await this.adapter.setStateAsync(id, value, true); }
+    private getDeviceIcon(modelId: string | undefined): string | undefined {
+        if (!modelId) return undefined;
+        const imageModel = ZIGBEE2MQTT_DEVICE_IMAGES[modelId];
+        return imageModel ? `https://www.zigbee2mqtt.io/images/devices/${imageModel}.png` : undefined;
+    }
+
     private getDeviceMetadata(d: HueDeviceResource): DeviceMetadata { const m = this.asRecord(d.metadata); const p = this.asRecord(d.product_data); return { name: this.asString(m?.name) ?? d.id, model_id: this.asString(p?.model_id), manufacturer_name: this.asString(p?.manufacturer_name), product_name: this.asString(p?.product_name), archetype: this.asString(m?.archetype) }; }
     private asRecord(v: unknown): Record<string, unknown> | undefined { return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : undefined; }
     private asString(v: unknown): string | undefined { return typeof v === 'string' ? v : undefined; }
