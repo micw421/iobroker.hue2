@@ -49,6 +49,12 @@ info.*
 
 Not every state is created for every device. For example, `color` is only available for lights that expose Hue color support.
 
+### Device icons
+
+For known Philips Hue model IDs, the adapter assigns the corresponding Zigbee2MQTT product image as the ioBroker device icon. The image is referenced externally and is not bundled with this adapter.
+
+Currently mapped examples include `LTG002`, `LTG005`, `LTW013`, `LCG002`, `LCL001`, `SML001`, `1743530P7` and `440400982841`. Unknown model IDs simply keep the default ioBroker device icon.
+
 ### Rooms and zones
 
 Hue rooms and zones are created below:
