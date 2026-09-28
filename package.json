@@ -26,7 +26,8 @@
     "check": "tsc --noEmit",
     "clean": "rimraf build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "update:device-images": "node scripts/update-philips-device-images.mjs"
   },
   "dependencies": {
     "@iobroker/adapter-core": "^3.4.3",
@@ -38,6 +39,7 @@
     "@types/node": "^22.0.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "zigbee-herdsman-converters": "^26.113.0"
   }
 }
