@@ -245,17 +245,14 @@ hue2.0.entertainment.<configuration UUID>
 ├─ name
 ├─ active
 ├─ start
-├─ stop
-└─ lights
-   ├─ <device UUID> = "Light name"
-   └─ <device UUID> = "Light name"
+└─ stop
 ```
+
+The participating physical light device UUIDs are stored in the configuration object's `native.lights` array, consistent with rooms and zones.
 
 `active` is a read-only status derived from the Hue `entertainment_configuration.status`.
 
 `start` and `stop` are button states. Writing `true` sends the corresponding Hue v2 Entertainment action to that configuration; the button is then reset to `false`. Changes to the actual Entertainment status are received through the Hue event stream.
-
-The `lights` channel lists the physical Hue devices that belong to the Entertainment configuration. As with room and zone membership lists, each state ID is the device UUID and its value is the device name.
 
 The `active_entertainment` states on devices, rooms and zones are read-only convenience states containing the active configuration name. To stop an active Entertainment session, use the `stop` state of the corresponding entry below `entertainment`.
 
