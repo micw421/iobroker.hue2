@@ -124,6 +124,29 @@ function createGroupResources(type: 'room' | 'zone', allOn: boolean): ResourceMa
 }
 
 describe('GroupObjectManager', () => {
+    it('stores room light membership in native metadata independently of optional states', async () => {
+        const { adapter, objects } = createAdapterMock();
+
+        await new GroupObjectManager(adapter).sync(createGroupResources('room', true));
+
+        expect(objects.get('rooms.room-1')?.native.lights).toEqual([
+            'device-1',
+            'device-2',
+        ]);
+        expect(objects.has('rooms.room-1.lights')).toBe(false);
+    });
+
+    it('stores zone light membership in native metadata', async () => {
+        const { adapter, objects } = createAdapterMock();
+
+        await new GroupObjectManager(adapter).sync(createGroupResources('zone', true));
+
+        expect(objects.get('zones.zone-1')?.native.lights).toEqual([
+            'device-1',
+            'device-2',
+        ]);
+    });
+
     it('creates room light membership using device UUIDs and names', async () => {
         const { adapter, objects, states } = createAdapterMock();
         const manager = new GroupObjectManager(adapter);
