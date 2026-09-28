@@ -107,6 +107,45 @@ describe('ObjectManager identify', () => {
         );
     });
 
+    it('uses generated mappings beyond the initially observed device models', async () => {
+        const { adapter, objects } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'Hue White' },
+                product_data: { model_id: 'LWA036' },
+                services: [],
+            }),
+        ]);
+
+        await new ObjectManager(adapter).syncDevices(resources);
+
+        expect(objects.get('devices.device-1')?.common.icon).toBe('img/devices/LWA036.png');
+        expect(objects.get('devices.device-1')?.native.modelIcon).toBe(
+            'https://www.zigbee2mqtt.io/images/devices/929003856401.png',
+        );
+    });
+
+    it('sanitizes generated Zigbee2MQTT image model names for URLs', async () => {
+        const { adapter, objects } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'Discover' },
+                product_data: { model_id: '1743530P7' },
+                services: [],
+            }),
+        ]);
+
+        await new ObjectManager(adapter).syncDevices(resources);
+
+        expect(objects.get('devices.device-1')?.native.modelIcon).toBe(
+            'https://www.zigbee2mqtt.io/images/devices/17435-30-P7.png',
+        );
+    });
+
     it('leaves the icon unset for unknown Hue model IDs', async () => {
         const { adapter, objects } = createAdapterMock();
         const resources = new ResourceManager([
