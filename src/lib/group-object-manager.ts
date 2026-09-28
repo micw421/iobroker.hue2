@@ -37,7 +37,8 @@ export class GroupObjectManager {
             const metadata = this.asRecord(container.metadata); const name = this.asString(metadata?.name) ?? container.id;
             const groupedLight = this.getServiceReferences(container).filter(reference => reference.rtype === 'grouped_light').map(reference => resources.getById(reference.rid)).find((candidate): candidate is HueResource => candidate !== undefined);
             const baseId = `${root}.${container.id}`;
-            await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id } });
+            const lightDeviceIds = this.getGroupDeviceIds(container, resources).filter(deviceId => resources.getDeviceServices(deviceId).some(service => service.type === 'light'));
+            await this.adapter.extendObjectAsync(baseId, { type: 'channel', common: { name }, native: { hueResourceId: container.id, hueResourceType: container.type, groupedLightResourceId: groupedLight?.id, lights: lightDeviceIds } });
 
             const legacyNameId = `${baseId}.name`;
             if (await this.adapter.getObjectAsync(legacyNameId)) await this.adapter.delObjectAsync(legacyNameId);
