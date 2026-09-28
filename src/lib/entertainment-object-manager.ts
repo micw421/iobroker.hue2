@@ -1,11 +1,18 @@
 import type { HueResource } from './hue-v2-client';
 import type { ResourceManager } from './resource-manager';
 
+export interface EntertainmentSyncOptions {
+    createLightStates?: boolean;
+}
+
 /** Creates and updates Hue Entertainment configurations. */
 export class EntertainmentObjectManager {
+    private createLightStates = false;
+
     public constructor(private readonly adapter: ioBroker.Adapter) {}
 
-    public async sync(resources: ResourceManager): Promise<void> {
+    public async sync(resources: ResourceManager, options: EntertainmentSyncOptions = {}): Promise<void> {
+        this.createLightStates = options.createLightStates === true;
         const configurations = resources.getByType('entertainment_configuration');
         if (configurations.length === 0) {
             const root = await this.adapter.getObjectAsync('entertainment');
@@ -36,6 +43,8 @@ export class EntertainmentObjectManager {
         }
         await this.adapter.setStateAsync(`${baseId}.active`, active, true);
         await this.syncNativeLights(baseId, resource, resources);
+        if (this.createLightStates) await this.syncLightStates(baseId, resource, resources);
+        else await this.removeLightStates(baseId);
     }
 
     private async syncConfiguration(configuration: HueResource, resources: ResourceManager): Promise<void> {
@@ -55,12 +64,8 @@ export class EntertainmentObjectManager {
             native,
         });
 
-        await this.adapter.extendObjectAsync(`${baseId}.name`, {
-            type: 'state',
-            common: { name: 'Name', type: 'string', role: 'text', read: true, write: false },
-            native,
-        });
-        await this.adapter.setStateAsync(`${baseId}.name`, name, true);
+        const legacyNameId = `${baseId}.name`;
+        if (await this.adapter.getObjectAsync(legacyNameId)) await this.adapter.delObjectAsync(legacyNameId);
 
         await this.adapter.extendObjectAsync(`${baseId}.active`, {
             type: 'state',
@@ -78,7 +83,8 @@ export class EntertainmentObjectManager {
             await this.adapter.setStateAsync(`${baseId}.${action}`, false, true);
         }
 
-        await this.removeLightStates(baseId);
+        if (this.createLightStates) await this.syncLightStates(baseId, configuration, resources);
+        else await this.removeLightStates(baseId);
     }
 
     private async syncNativeLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
@@ -95,6 +101,46 @@ export class EntertainmentObjectManager {
         await this.removeLightStates(baseId);
     }
 
+    private async syncLightStates(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
+        const lightsBaseId = `${baseId}.lights`;
+        const deviceIds = this.getEntertainmentDeviceIds(configuration, resources);
+        if (deviceIds.length === 0) {
+            await this.removeLightStates(baseId);
+            return;
+        }
+
+        await this.adapter.extendObjectAsync(lightsBaseId, {
+            type: 'channel',
+            common: { name: 'Lights' },
+            native: {},
+        });
+
+        for (const deviceId of deviceIds) {
+            const device = resources.getDevice(deviceId);
+            const metadata = this.asRecord(device?.metadata);
+            const name = typeof metadata?.name === 'string' ? metadata.name : deviceId;
+            await this.adapter.extendObjectAsync(`${lightsBaseId}.${deviceId}`, {
+                type: 'state',
+                common: { name, type: 'string', role: 'text', read: true, write: false },
+                native: { hueDeviceResourceId: deviceId },
+            });
+            await this.adapter.setStateAsync(`${lightsBaseId}.${deviceId}`, name, true);
+        }
+        await this.removeObsoleteLightStates(baseId, new Set(deviceIds));
+    }
+
+    private async removeObsoleteLightStates(baseId: string, currentDeviceIds: Set<string>): Promise<void> {
+        const prefix = `${this.adapter.namespace}.${baseId}.lights.`;
+        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
+        for (const [id, object] of Object.entries(objects)) {
+            if (!id.startsWith(prefix) || object.type !== 'state') continue;
+            const deviceId = id.slice(prefix.length);
+            const native = object.native as Record<string, unknown>;
+            if (native.hueDeviceResourceId === deviceId && !currentDeviceIds.has(deviceId)) {
+                await this.adapter.delObjectAsync(`${baseId}.lights.${deviceId}`);
+            }
+        }
+    }
     private async removeLightStates(baseId: string): Promise<void> {
         const lightsObject = await this.adapter.getObjectAsync(`${baseId}.lights`);
         if (lightsObject) await this.adapter.delObjectAsync(`${baseId}.lights`, { recursive: true });
