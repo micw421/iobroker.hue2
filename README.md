@@ -1,6 +1,30 @@
-# ioBroker.hue2
+![Logo](admin/hue2.png)
 
-A new ioBroker adapter for Philips Hue based exclusively on the Hue API v2.
+# ioBroker Philips Hue v2 Adapter
+
+[![Test and build](https://github.com/micw421/iobroker.hue2/actions/workflows/test-and-build.yml/badge.svg)](https://github.com/micw421/iobroker.hue2/actions/workflows/test-and-build.yml)
+
+Philips Hue adapter for ioBroker based exclusively on the Hue API v2.
+
+## Status
+
+This adapter is currently under development and is not yet published in the official ioBroker repository. It can be installed directly from GitHub for testing.
+
+## Requirements
+
+- Node.js >= 22
+- js-controller >= 6.0.0
+- Admin >= 7.0.0
+- Philips Hue Bridge with Hue API v2 support
+
+## Setup
+
+1. Install the adapter from GitHub as described below.
+2. Create a `hue2` adapter instance in ioBroker.
+3. Enter the Hue Bridge IP address or hostname.
+4. Enter a valid Hue application key.
+5. Save the configuration and start the instance.
+6. The adapter discovers the Hue resources and creates the corresponding ioBroker objects automatically.
 
 ## Goals
 
@@ -324,3 +348,17 @@ npm install
 npm run check
 npm run build
 ```
+
+
+## Roadmap / Todo
+
+- Automatic Hue Bridge discovery
+- Convenient application-key pairing through the Hue Bridge link button
+- Further device and Hue API v2 capability coverage
+- Preparation for publication in the official ioBroker repository
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
+Copyright (c) 2026 micw421
