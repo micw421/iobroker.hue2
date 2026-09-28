@@ -88,17 +88,11 @@ export class EntertainmentObjectManager {
     }
 
     private async syncNativeLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
-        const object = await this.adapter.getObjectAsync(baseId);
-        if (!object) return;
         await this.adapter.extendObjectAsync(baseId, {
-            type: 'channel',
-            common: object.common,
             native: {
-                ...object.native,
                 lights: this.getEntertainmentDeviceIds(configuration, resources),
             },
         });
-        await this.removeLightStates(baseId);
     }
 
     private async syncLightStates(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
