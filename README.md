@@ -77,7 +77,15 @@ Not every state is created for every device. For example, `color` is only availa
 
 For known Philips Hue model IDs, the adapter uses the corresponding Zigbee2MQTT product image as the ioBroker device icon. The image is downloaded on demand into ioBroker's adapter admin storage and `common.icon` points to that local cached file. The product images are not bundled with this adapter.
 
-Currently mapped examples include `LTG002`, `LTG005`, `LTW013`, `LCG002`, `LCL001`, `SML001`, `1743530P7` and `440400982841`. Unknown model IDs simply keep the default ioBroker device icon.
+The model mapping is generated from the Philips device definitions in `zigbee-herdsman-converters` instead of being maintained manually. The generated mapping currently covers hundreds of Philips/Hue model IDs, including classic IDs such as `LCT...`, `LTW...`, `LTG...`, sensors and newer product-number based IDs. Unknown model IDs simply keep the default ioBroker device icon.
+
+To refresh the generated mapping after updating `zigbee-herdsman-converters`:
+
+```bash
+npm run update:device-images
+```
+
+The generated file is `src/lib/philips-device-images.generated.ts` and should be committed together with the dependency update.
 
 ### Rooms and zones
 
