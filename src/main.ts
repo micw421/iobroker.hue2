@@ -55,7 +55,9 @@ class Hue2 extends utils.Adapter {
                 createIoBrokerRooms: config.createIoBrokerRooms === true,
                 createLightStates: config.createLightStates === true,
             });
-            await this.entertainmentObjectManager.sync(this.resources);
+            await this.entertainmentObjectManager.sync(this.resources, {
+                createLightStates: config.createLightStates === true,
+            });
             this.subscribeStates('devices.*');
             this.subscribeStates('rooms.*');
             this.subscribeStates('zones.*');
@@ -130,7 +132,9 @@ class Hue2 extends utils.Adapter {
                         createIoBrokerRooms: config.createIoBrokerRooms === true,
                         createLightStates: config.createLightStates === true,
                     }) },
-                    this.entertainmentObjectManager,
+                    { sync: resources => this.entertainmentObjectManager.sync(resources, {
+                        createLightStates: config.createLightStates === true,
+                    }) },
                 ],
             );
             const resourceCount = await synchronizer.resync();
