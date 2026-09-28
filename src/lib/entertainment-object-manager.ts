@@ -35,7 +35,7 @@ export class EntertainmentObjectManager {
             return;
         }
         await this.adapter.setStateAsync(`${baseId}.active`, active, true);
-        await this.syncLights(baseId, resource, resources);
+        await this.syncNativeLights(baseId, resource, resources);
     }
 
     private async syncConfiguration(configuration: HueResource, resources: ResourceManager): Promise<void> {
@@ -46,6 +46,7 @@ export class EntertainmentObjectManager {
             hueResourceId: configuration.id,
             hueResourceType: configuration.type,
             idV1: configuration.id_v1,
+            lights: this.getEntertainmentDeviceIds(configuration, resources),
         };
 
         await this.adapter.extendObjectAsync(baseId, {
@@ -77,36 +78,26 @@ export class EntertainmentObjectManager {
             await this.adapter.setStateAsync(`${baseId}.${action}`, false, true);
         }
 
-        await this.syncLights(baseId, configuration, resources);
+        await this.removeLightStates(baseId);
     }
 
-    private async syncLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
-        const lightsBaseId = `${baseId}.lights`;
-        const deviceIds = this.getEntertainmentDeviceIds(configuration, resources);
-        if (deviceIds.length === 0) {
-            const lightsObject = await this.adapter.getObjectAsync(lightsBaseId);
-            if (lightsObject) await this.adapter.delObjectAsync(lightsBaseId, { recursive: true });
-            return;
-        }
-
-        await this.adapter.extendObjectAsync(lightsBaseId, {
+    private async syncNativeLights(baseId: string, configuration: HueResource, resources: ResourceManager): Promise<void> {
+        const object = await this.adapter.getObjectAsync(baseId);
+        if (!object) return;
+        await this.adapter.extendObjectAsync(baseId, {
             type: 'channel',
-            common: { name: 'Lights' },
-            native: {},
+            common: object.common,
+            native: {
+                ...object.native,
+                lights: this.getEntertainmentDeviceIds(configuration, resources),
+            },
         });
+        await this.removeLightStates(baseId);
+    }
 
-        for (const deviceId of deviceIds) {
-            const device = resources.getDevice(deviceId);
-            const metadata = this.asRecord(device?.metadata);
-            const name = typeof metadata?.name === 'string' ? metadata.name : deviceId;
-            await this.adapter.extendObjectAsync(`${lightsBaseId}.${deviceId}`, {
-                type: 'state',
-                common: { name, type: 'string', role: 'text', read: true, write: false },
-                native: { hueDeviceResourceId: deviceId },
-            });
-            await this.adapter.setStateAsync(`${lightsBaseId}.${deviceId}`, name, true);
-        }
-        await this.removeObsoleteLightObjects(baseId, new Set(deviceIds));
+    private async removeLightStates(baseId: string): Promise<void> {
+        const lightsObject = await this.adapter.getObjectAsync(`${baseId}.lights`);
+        if (lightsObject) await this.adapter.delObjectAsync(`${baseId}.lights`, { recursive: true });
     }
 
     private async removeObsoleteConfigurations(currentIds: Set<string>): Promise<void> {
@@ -121,19 +112,6 @@ export class EntertainmentObjectManager {
             if (native.hueResourceType === 'entertainment_configuration' && !currentIds.has(relative)) obsolete.add(relative);
         }
         for (const id of obsolete) await this.adapter.delObjectAsync(`entertainment.${id}`, { recursive: true });
-    }
-
-    private async removeObsoleteLightObjects(baseId: string, currentDeviceIds: Set<string>): Promise<void> {
-        const prefix = `${this.adapter.namespace}.${baseId}.lights.`;
-        const objects = await this.adapter.getForeignObjectsAsync(`${prefix}*`);
-        for (const [id, object] of Object.entries(objects)) {
-            if (!id.startsWith(prefix) || object.type !== 'state') continue;
-            const deviceId = id.slice(prefix.length);
-            const native = object.native as Record<string, unknown>;
-            if (native.hueDeviceResourceId === deviceId && !currentDeviceIds.has(deviceId)) {
-                await this.adapter.delObjectAsync(`${baseId}.lights.${deviceId}`);
-            }
-        }
     }
 
     private getEntertainmentDeviceIds(configuration: HueResource, resources: ResourceManager): string[] {
