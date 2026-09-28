@@ -101,6 +101,14 @@ Each room and zone stores its light membership independently of visible states i
 
 The array contains physical Hue device UUIDs and is always maintained, regardless of the optional `createLightStates` setting.
 
+This provides a stable way for ioBroker JavaScript scripts to resolve the physical device objects without requiring the optional `lights.*` states:
+
+```javascript
+const lights = getObject(room).native.lights.map(id => `hue2.0.devices.${id}`);
+```
+
+Here, `room` is the object ID of the room, zone or Entertainment configuration. The same `native.lights` convention is used for all three resource types.
+
 A room or zone can expose states such as:
 
 ```text
