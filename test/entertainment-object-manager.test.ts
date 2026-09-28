@@ -127,13 +127,16 @@ describe('EntertainmentObjectManager', () => {
         expect(states.get('entertainment.config-1.stop')).toBe(false);
     });
 
-    it('lists lights referenced through light_services and channels', async () => {
-        const { adapter, states } = createAdapterMock();
+    it('stores lights referenced through light_services and channels in native metadata', async () => {
+        const { adapter, objects } = createAdapterMock();
 
         await new EntertainmentObjectManager(adapter).sync(createResources());
 
-        expect(states.get('entertainment.config-1.lights.device-1')).toBe('TV left');
-        expect(states.get('entertainment.config-1.lights.device-2')).toBe('TV right');
+        expect(objects.get('entertainment.config-1')?.native.lights).toEqual([
+            'device-1',
+            'device-2',
+        ]);
+        expect(objects.has('entertainment.config-1.lights')).toBe(false);
     });
 
     it('updates active when the entertainment configuration status changes', async () => {
@@ -153,13 +156,12 @@ describe('EntertainmentObjectManager', () => {
         expect(states.get('entertainment.config-1.active')).toBe(true);
     });
 
-    it('removes obsolete light membership without recreating the configuration', async () => {
-        const { adapter, objects, states, deleted } = createAdapterMock();
+    it('updates native light membership without recreating the configuration', async () => {
+        const { adapter, objects } = createAdapterMock();
         const resources = createResources();
         const manager = new EntertainmentObjectManager(adapter);
 
         await manager.sync(resources);
-        expect(states.get('entertainment.config-1.lights.device-2')).toBe('TV right');
 
         resources.replaceAll([
             resource({
@@ -186,10 +188,8 @@ describe('EntertainmentObjectManager', () => {
         await manager.sync(resources);
 
         expect(objects.has('entertainment.config-1')).toBe(true);
-        expect(states.get('entertainment.config-1.lights.device-1')).toBe('TV left');
-        expect(states.has('entertainment.config-1.lights.device-2')).toBe(false);
-        expect(deleted).toContain('entertainment.config-1.lights.device-2');
-        expect(deleted).not.toContain('entertainment.config-1');
+        expect(objects.get('entertainment.config-1')?.native.lights).toEqual(['device-1']);
+        expect(objects.has('entertainment.config-1.lights')).toBe(false);
     });
 
     it('removes entertainment configurations that no longer exist', async () => {
