@@ -242,13 +242,13 @@ Hue Entertainment configurations are exposed as their own top-level resources:
 
 ```text
 hue2.0.entertainment.<configuration UUID>
-├─ name
 ├─ active
 ├─ start
-└─ stop
+├─ stop
+└─ lights.*        (optional)
 ```
 
-The participating physical light device UUIDs are stored in the configuration object's `native.lights` array, consistent with rooms and zones.
+The participating physical light device UUIDs are stored in the configuration object's `native.lights` array, consistent with rooms and zones. If `createLightStates` is enabled, an additional `lights.*` state tree is created for Entertainment configurations as well.
 
 `active` is a read-only status derived from the Hue `entertainment_configuration.status`.
 
@@ -333,7 +333,7 @@ The adapter expects the Hue Bridge address and Hue application key in the instan
 - `applicationKey`
 - `dimmingControlsPower` (default: `false`): if enabled, writing `dimming > 0` also turns the light or group on. Writing `dimming = 0` turns it off. With this option disabled, `dimming` only changes brightness and does not implicitly change the power state.
 - `createIoBrokerRooms` (default: `false`): mirror Hue rooms into `enum.rooms` and assign the contained Hue devices.
-- `createLightStates` (default: `false`): create `rooms/zones.<uuid>.lights.*` membership states.
+- `createLightStates` (default: `false`): create `rooms/zones/entertainment.<uuid>.lights.*` membership states.
 
 The `dimmingControlsPower` option only affects direct writes to the `dimming` state. Raw JSON written to `command` is sent as specified and is not modified by this option.
 
