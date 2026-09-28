@@ -1,5 +1,6 @@
 import type { HueResource } from './hue-v2-client';
 import type { HueDeviceResource, ResourceManager } from './resource-manager';
+import { PHILIPS_DEVICE_IMAGE_MODELS } from './philips-device-images.generated';
 
 interface DeviceMetadata { name: string; model_id?: string; manufacturer_name?: string; product_name?: string; archetype?: string; }
 interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; write?: boolean; unit?: string; min?: number; max?: number; }
