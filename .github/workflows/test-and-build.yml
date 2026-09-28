@@ -1,6 +1,8 @@
 name: Test and build
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -31,3 +33,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Git install smoke test
+        run: |
+          mkdir -p /tmp/hue2-install-test
+          cd /tmp/hue2-install-test
+          npm init -y
+          npm install "git+https://github.com/${{ github.repository }}.git#${{ github.sha }}"
