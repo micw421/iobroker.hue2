@@ -88,6 +88,19 @@ hue2.0.rooms.<room UUID>
 hue2.0.zones.<zone UUID>
 ```
 
+Each room and zone stores its light membership independently of visible states in the parent object's native metadata:
+
+```json
+"native": {
+  "lights": [
+    "<device UUID>",
+    "<device UUID>"
+  ]
+}
+```
+
+The array contains physical Hue device UUIDs and is always maintained, regardless of the optional `createLightStates` setting.
+
 A room or zone can expose states such as:
 
 ```text
