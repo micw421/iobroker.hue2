@@ -1,4 +1,4 @@
-![Logo](admin/hue2.png)
+<img src="admin/hue2.png" alt="ioBroker Philips Hue v2 Adapter" width="160">
 
 # ioBroker Philips Hue v2 Adapter
 
