@@ -110,13 +110,14 @@ function createResources(): ResourceManager {
 }
 
 describe('EntertainmentObjectManager', () => {
-    it('creates name, active and start/stop states', async () => {
+    it('creates active and start/stop states without a duplicate name state', async () => {
         const { adapter, objects, states } = createAdapterMock();
         const manager = new EntertainmentObjectManager(adapter);
 
         await manager.sync(createResources());
 
-        expect(states.get('entertainment.config-1.name')).toBe('TV area');
+        expect(objects.get('entertainment.config-1')?.common.name).toBe('TV area');
+        expect(states.has('entertainment.config-1.name')).toBe(false);
         expect(states.get('entertainment.config-1.active')).toBe(false);
 
         expect(objects.get('entertainment.config-1.start')?.common.role).toBe('button');
@@ -127,6 +128,15 @@ describe('EntertainmentObjectManager', () => {
         expect(states.get('entertainment.config-1.stop')).toBe(false);
     });
 
+    it('creates optional entertainment light states when enabled', async () => {
+        const { adapter, objects, states } = createAdapterMock();
+
+        await new EntertainmentObjectManager(adapter).sync(createResources(), { createLightStates: true });
+
+        expect(objects.has('entertainment.config-1.lights')).toBe(true);
+        expect(states.get('entertainment.config-1.lights.device-1')).toBe('TV left');
+        expect(states.get('entertainment.config-1.lights.device-2')).toBe('TV right');
+    });
     it('stores lights referenced through light_services and channels in native metadata', async () => {
         const { adapter, objects } = createAdapterMock();
 
