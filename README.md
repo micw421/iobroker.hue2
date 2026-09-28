@@ -303,6 +303,20 @@ The adapter expects the Hue Bridge address and Hue application key in the instan
 
 The `dimmingControlsPower` option only affects direct writes to the `dimming` state. Raw JSON written to `command` is sent as specified and is not modified by this option.
 
+## Test installation from GitHub
+
+The adapter can be installed for testing directly from this public GitHub repository before it is published in the official ioBroker repository.
+
+In ioBroker Admin, use **Install adapter from own URL / GitHub** and enter:
+
+```text
+https://github.com/micw421/iobroker.hue2
+```
+
+The installation requires Node.js 22 or newer. Because the repository contains TypeScript sources, npm runs the `prepare` script during a Git installation and builds `build/main.js` automatically.
+
+After installation, create an instance, enter the Hue Bridge address and application key, and start the instance.
+
 ## Development
 
 ```bash
