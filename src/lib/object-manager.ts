@@ -4,17 +4,6 @@ import type { HueDeviceResource, ResourceManager } from './resource-manager';
 interface DeviceMetadata { name: string; model_id?: string; manufacturer_name?: string; product_name?: string; archetype?: string; }
 interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; write?: boolean; unit?: string; min?: number; max?: number; }
 
-const ZIGBEE2MQTT_DEVICE_IMAGES: Record<string, string> = {
-    LTG002: '929001953301',
-    LTG005: '929003666701',
-    LTW013: '8718696598283',
-    LCG002: '929001953101',
-    LCL001: '8718699703424',
-    SML001: '9290012607',
-    '1743530P7': '17435-30-P7',
-    '440400982841': '915005733701',
-};
-
 /** Creates and updates the flat ioBroker device model for Hue v2 resources. */
 export class ObjectManager {
     public constructor(private readonly adapter: ioBroker.Adapter) {}
@@ -159,8 +148,10 @@ export class ObjectManager {
     private async createInfoState(id: string, name: string, value: string): Promise<void> { await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: {} }); await this.adapter.setStateAsync(id, value, true); }
     private getDeviceIcon(modelId: string | undefined): string | undefined {
         if (!modelId) return undefined;
-        const imageModel = ZIGBEE2MQTT_DEVICE_IMAGES[modelId];
-        return imageModel ? `https://www.zigbee2mqtt.io/images/devices/${imageModel}.png` : undefined;
+        const imageModel = PHILIPS_DEVICE_IMAGE_MODELS[modelId];
+        if (!imageModel) return undefined;
+        const imageName = imageModel.replace(/[^a-z\d\-_.()+:]/gi, '-');
+        return `https://www.zigbee2mqtt.io/images/devices/${imageName}.png`;
     }
 
     private async ensureLocalDeviceIcon(modelId: string, url: string): Promise<string | undefined> {
