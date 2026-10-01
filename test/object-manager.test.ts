@@ -163,6 +163,52 @@ describe('ObjectManager identify', () => {
         expect(objects.get('devices.device-1')?.common.icon).toBeUndefined();
     });
 
+    it('creates button states by Hue control_id and updates them from events', async () => {
+        const { adapter, objects, states } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'Dimmer switch' },
+                services: [
+                    { rid: 'button-1', rtype: 'button' },
+                    { rid: 'button-2', rtype: 'button' },
+                ],
+            }),
+            resource({
+                id: 'button-1',
+                type: 'button',
+                metadata: { control_id: 1 },
+                button: { last_event: 'short_release' },
+            }),
+            resource({
+                id: 'button-2',
+                type: 'button',
+                metadata: { control_id: 2 },
+                button: { last_event: 'initial_press' },
+            }),
+        ]);
+
+        const manager = new ObjectManager(adapter);
+        await manager.syncDevices(resources);
+
+        expect(objects.get('devices.device-1.button_1')?.native.hueResourceId).toBe('button-1');
+        expect(objects.get('devices.device-1.button_1')?.native.hueResourceType).toBe('button');
+        expect(objects.get('devices.device-1.button_1')?.native.controlId).toBe('1');
+        expect(states.get('devices.device-1.button_1')).toBe('short_release');
+        expect(states.get('devices.device-1.button_2')).toBe('initial_press');
+
+        const update = resources.patch(resource({
+            id: 'button-2',
+            type: 'button',
+            metadata: { control_id: 2 },
+            button: { last_event: 'long_press' },
+        }));
+        await manager.updateResource(resources, update);
+
+        expect(states.get('devices.device-1.button_2')).toBe('long_press');
+    });
+
     it('does not create identify for devices without a light service', async () => {
         const { adapter, objects } = createAdapterMock();
         const resources = new ResourceManager([
