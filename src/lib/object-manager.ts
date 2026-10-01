@@ -91,6 +91,7 @@ export class ObjectManager {
             case 'light_level': await this.syncLightLevelStates(baseId, resource); break;
             case 'device_power': await this.syncDevicePowerStates(baseId, resource); break;
             case 'zigbee_connectivity': await this.syncZigbeeConnectivityStates(baseId, resource); break;
+            case 'button': await this.syncButtonState(baseId, resource); break;
         }
     }
 
@@ -107,6 +108,12 @@ export class ObjectManager {
             case 'light_level': { const v = this.asRecord(resource.light); if (typeof v?.light_level === 'number') await this.adapter.setStateAsync(`${baseId}.light_level`, v.light_level, true); break; }
             case 'device_power': { const v = this.asRecord(resource.power_state); if (typeof v?.battery_level === 'number') await this.adapter.setStateAsync(`${baseId}.battery_level`, v.battery_level, true); if (typeof v?.battery_state === 'string') await this.adapter.setStateAsync(`${baseId}.battery_state`, v.battery_state, true); break; }
             case 'zigbee_connectivity': if (typeof resource.status === 'string') await this.adapter.setStateAsync(`${baseId}.connected`, resource.status === 'connected', true); break;
+            case 'button': {
+                const controlId = this.getButtonControlId(resource);
+                const event = this.getButtonEvent(resource);
+                if (controlId !== undefined && event !== undefined) await this.adapter.setStateAsync(`${baseId}.button_${controlId}`, event, true);
+                break;
+            }
         }
     }
 
@@ -143,6 +150,25 @@ export class ObjectManager {
     private async syncLightLevelStates(baseId: string, r: HueResource): Promise<void> { const v = this.asRecord(r.light); if (typeof v?.light_level === 'number') await this.createState(`${baseId}.light_level`, { name: 'Light level', type: 'number', role: 'value', value: v.light_level, resource: r }); }
     private async syncDevicePowerStates(baseId: string, r: HueResource): Promise<void> { const v = this.asRecord(r.power_state); if (typeof v?.battery_level === 'number') await this.createState(`${baseId}.battery_level`, { name: 'Battery level', type: 'number', role: 'value.battery', value: v.battery_level, unit: '%', min: 0, max: 100, resource: r }); if (typeof v?.battery_state === 'string') await this.createState(`${baseId}.battery_state`, { name: 'Battery state', type: 'string', role: 'text', value: v.battery_state, resource: r }); }
     private async syncZigbeeConnectivityStates(baseId: string, r: HueResource): Promise<void> { if (typeof r.status === 'string') await this.createState(`${baseId}.connected`, { name: 'Connected', type: 'boolean', role: 'indicator.connected', value: r.status === 'connected', resource: r }); }
+    private async syncButtonState(baseId: string, r: HueResource): Promise<void> {
+        const controlId = this.getButtonControlId(r);
+        if (controlId === undefined) return;
+        const event = this.getButtonEvent(r);
+        await this.createState(
+            `${baseId}.button_${controlId}`,
+            { name: `Button ${controlId}`, type: 'string', role: 'text', value: event, resource: r },
+            { controlId },
+        );
+    }
+    private getButtonControlId(r: HueResource): string | undefined {
+        const metadata = this.asRecord(r.metadata);
+        const controlId = metadata?.control_id;
+        return typeof controlId === 'number' || typeof controlId === 'string' ? String(controlId) : undefined;
+    }
+    private getButtonEvent(r: HueResource): string | undefined {
+        const button = this.asRecord(r.button);
+        return this.asString(button?.last_event);
+    }
 
     private async createState(id: string, d: StateDefinition, nativeExtra: Record<string, unknown> = {}): Promise<void> { const common: ioBroker.StateCommon = { name: d.name, type: d.type, role: d.role, read: true, write: d.write ?? false }; if (d.unit !== undefined) common.unit = d.unit; if (d.min !== undefined) common.min = d.min; if (d.max !== undefined) common.max = d.max; await this.adapter.extendObjectAsync(id, { type: 'state', common, native: { hueResourceId: d.resource.id, hueResourceType: d.resource.type, idV1: d.resource.id_v1, ...nativeExtra } }); if (d.value !== undefined) await this.adapter.setStateAsync(id, d.value, true); }
     private async createOptionalInfoState(id: string, name: string, value: string | undefined): Promise<void> { if (value !== undefined) await this.createInfoState(id, name, value); }
