@@ -73,6 +73,16 @@ info.*
 
 Not every state is created for every device. For example, `color` is only available for lights that expose Hue color support.
 
+Hue button services are exposed directly below the physical device using their Hue `metadata.control_id`:
+
+```text
+hue2.0.devices.<device UUID>.button_1
+hue2.0.devices.<device UUID>.button_2
+...
+```
+
+The state value contains the latest Hue button event, for example `initial_press`, `short_release`, `long_press`, `repeat` or `long_release`. The underlying Hue button resource UUID remains available in the state's `native.hueResourceId`.
+
 ### Device icons
 
 For known Philips Hue model IDs, the adapter uses the corresponding Zigbee2MQTT product image as the ioBroker device icon. The image is downloaded on demand into ioBroker's adapter admin storage and `common.icon` points to that local cached file. The product images are not bundled with this adapter.
