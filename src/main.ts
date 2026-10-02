@@ -109,6 +109,7 @@ class Hue2 extends utils.Adapter {
             },
             onError: error => this.log.warn(`Hue event stream: ${error.message}`),
             onUpdate: update => this.handleResourceUpdate(update),
+            onDelete: deleted => this.handleResourceDelete(deleted),
         });
     }
 
@@ -120,6 +121,10 @@ class Hue2 extends utils.Adapter {
         }
 
         this.log.info('Hue API v2 event stream reconnected; resynchronizing resources');
+        await this.resyncResources('reconnect');
+    }
+
+    private async resyncResources(reason: 'reconnect' | 'delete'): Promise<void> {
         try {
             if (!this.client || !this.resources) return;
             const config = this.config as Hue2Config;
@@ -139,12 +144,18 @@ class Hue2 extends utils.Adapter {
             );
             const resourceCount = await synchronizer.resync();
             await this.setStateAsync('info.connection', true, true);
-            this.log.info(`Hue resync after reconnect completed. Indexed ${resourceCount} API v2 resources.`);
+            this.log.info(`Hue resync after ${reason} completed. Indexed ${resourceCount} API v2 resources.`);
         } catch (error) {
             await this.setStateAsync('info.connection', false, true);
             const message = error instanceof Error ? error.message : String(error);
-            this.log.warn(`Hue resync after reconnect failed: ${message}`);
+            this.log.warn(`Hue resync after ${reason} failed: ${message}`);
         }
+    }
+
+    private async handleResourceDelete(deleted: HueResource): Promise<void> {
+        if (this.reconnectSync) await this.reconnectSync;
+        this.log.debug(`Hue event delete ${deleted.type}: ${deleted.id}; resynchronizing resources`);
+        await this.resyncResources('delete');
     }
 
     private async handleResourceUpdate(update: HueResource): Promise<void> {
