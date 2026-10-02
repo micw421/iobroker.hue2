@@ -213,6 +213,25 @@ describe('GroupObjectManager', () => {
         expect(deleted).toContain('rooms.room-1.lights');
     });
 
+    it('removes stale scene objects and clears active_scene during a full sync', async () => {
+        const { adapter, objects, states, deleted } = createAdapterMock();
+        const resources = createGroupResources('room', true);
+
+        objects.set('rooms.room-1.scenes', { type: 'channel', common: { name: 'Scenes' }, native: {} });
+        objects.set('rooms.room-1.scenes.deleted-scene', {
+            type: 'channel',
+            common: { name: 'Deleted scene' },
+            native: { hueResourceId: 'deleted-scene', hueResourceType: 'scene' },
+        });
+        states.set('rooms.room-1.active_scene', 'Deleted scene');
+
+        await new GroupObjectManager(adapter).sync(resources);
+
+        expect(objects.has('rooms.room-1.scenes')).toBe(false);
+        expect(objects.has('rooms.room-1.scenes.deleted-scene')).toBe(false);
+        expect(states.get('rooms.room-1.active_scene')).toBe('');
+        expect(deleted).toContain('rooms.room-1.scenes');
+    });
     it('sets all_on true only when every room light is on', async () => {
         const first = createAdapterMock();
         await new GroupObjectManager(first.adapter).sync(createGroupResources('room', true));
