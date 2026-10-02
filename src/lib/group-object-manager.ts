@@ -70,11 +70,14 @@ export class GroupObjectManager {
 
     private async syncScenesForGroup(baseId: string, groupId: string, groupType: string, resources: ResourceManager): Promise<void> {
         const scenes = resources.getByType('scene').filter(scene => { const group = this.asRecord(scene.group); return this.asString(group?.rid) === groupId && this.asString(group?.rtype) === groupType; });
-        if (scenes.length === 0) {
-            const scenesObject = await this.adapter.getObjectAsync(`${baseId}.scenes`);
-            if (scenesObject) await this.adapter.delObjectAsync(`${baseId}.scenes`, { recursive: true });
-            return;
-        }
+
+        // Treat the bridge's current scene list as the source of truth. Scene membership
+        // can change through the Hue app without a reliable per-object update trail.
+        const existingScenesObject = await this.adapter.getObjectAsync(`${baseId}.scenes`);
+        if (existingScenesObject) await this.adapter.delObjectAsync(`${baseId}.scenes`, { recursive: true });
+
+        if (scenes.length === 0) return;
+
         await this.adapter.extendObjectAsync(`${baseId}.scenes`, { type: 'channel', common: { name: 'Scenes' }, native: {} });
         for (const scene of scenes) {
             const metadata = this.asRecord(scene.metadata); const name = this.asString(metadata?.name) ?? scene.id; const sceneBaseId = `${baseId}.scenes.${scene.id}`;
@@ -83,9 +86,7 @@ export class GroupObjectManager {
             await this.createState(`${sceneBaseId}.recall`, { name: 'Recall', type: 'boolean', role: 'button', value: false, resource: scene, write: true });
             const status = this.getSceneStatus(scene); if (status !== undefined) await this.createState(`${sceneBaseId}.status`, { name: 'Status', type: 'string', role: 'text', value: status, resource: scene });
         }
-        await this.removeObsoleteSceneObjects(baseId, new Set(scenes.map(scene => scene.id)));
     }
-
     private async updateSceneStatus(scene: HueResource): Promise<void> {
         const status = this.getSceneStatus(scene); if (status === undefined) return;
         const group = this.asRecord(scene.group); const groupId = this.asString(group?.rid); const groupType = this.asString(group?.rtype); if (!groupId) return;
