@@ -212,5 +212,6 @@ export class ObjectManager {
     private getDeviceMetadata(d: HueDeviceResource): DeviceMetadata { const m = this.asRecord(d.metadata); const p = this.asRecord(d.product_data); return { name: this.asString(m?.name) ?? d.id, model_id: this.asString(p?.model_id), manufacturer_name: this.asString(p?.manufacturer_name), product_name: this.asString(p?.product_name), archetype: this.asString(m?.archetype) }; }
     private asRecord(v: unknown): Record<string, unknown> | undefined { return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : undefined; }
     private asString(v: unknown): string | undefined { return typeof v === 'string' ? v : undefined; }
+    private asStringArray(v: unknown): string[] { return Array.isArray(v) && v.every(entry => typeof entry === 'string') ? v : []; }
     private asNumber(v: unknown): number | undefined { return typeof v === 'number' ? v : undefined; }
 }
