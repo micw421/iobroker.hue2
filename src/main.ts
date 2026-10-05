@@ -212,6 +212,14 @@ class Hue2 extends utils.Adapter {
                     await this.writeColor(native, state.val);
                     await this.cancelTransitionForWrite(relativeId);
                     break;
+                case 'effect':
+                    await this.writeEffect(native, state.val, 'effects');
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
+                case 'timed_effect':
+                    await this.writeEffect(native, state.val, 'timed_effects');
+                    await this.cancelTransitionForWrite(relativeId);
+                    break;
                 case 'command': await this.writeCommand(relativeId, native, state.val); break;
                 case 'identify':
                     await this.writeIdentify(relativeId, native, state.val);
@@ -340,6 +348,11 @@ class Hue2 extends utils.Adapter {
         if (typeof xy?.x !== 'number' || typeof xy?.y !== 'number') throw new Error('color must contain numeric x and y values');
         if (xy.x < 0 || xy.x > 1 || xy.y < 0 || xy.y > 1) throw new Error('color x and y must be between 0 and 1');
         await this.writeSingleResource(native, { color: { xy: { x: xy.x, y: xy.y } } });
+    }
+
+    private async writeEffect(native: Record<string, unknown>, value: ioBroker.StateValue, property: 'effects' | 'timed_effects'): Promise<void> {
+        if (typeof value !== 'string' || value.length === 0) throw new Error(`${property} must be a non-empty string`);
+        await this.writeSingleResource(native, { [property]: { action: value } });
     }
 
     private requireBoolean(value: ioBroker.StateValue, property: string): boolean { if (typeof value !== 'boolean') throw new Error(`${property} must be boolean`); return value; }
