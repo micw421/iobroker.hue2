@@ -18,6 +18,7 @@ export interface HueEventStreamOptions {
 
 export interface HueEventStreamHandlers {
     onUpdate: (resource: HueResource) => void | Promise<void>;
+    onAdd?: (resource: HueResource) => void | Promise<void>;
     onDelete?: (resource: HueResource) => void | Promise<void>;
     onConnected?: () => void;
     onDisconnected?: () => void;
@@ -168,8 +169,10 @@ export class HueEventStream {
                     }
                     for (const resource of rawEnvelope.data) {
                         if (!this.isHueResourceUpdate(resource)) continue;
-                        if (rawEnvelope.type === 'update' || rawEnvelope.type === 'add') {
+                        if (rawEnvelope.type === 'update') {
                             await this.handlers?.onUpdate(resource);
+                        } else if (rawEnvelope.type === 'add') {
+                            await this.handlers?.onAdd?.(resource);
                         } else if (rawEnvelope.type === 'delete') {
                             await this.handlers?.onDelete?.(resource);
                         }
