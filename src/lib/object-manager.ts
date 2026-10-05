@@ -3,7 +3,7 @@ import type { HueDeviceResource, ResourceManager } from './resource-manager';
 import { PHILIPS_DEVICE_IMAGE_MODELS } from './philips-device-images.generated';
 
 interface DeviceMetadata { name: string; model_id?: string; manufacturer_name?: string; product_name?: string; archetype?: string; }
-interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; write?: boolean; unit?: string; min?: number; max?: number; }
+interface StateDefinition { name: string; type: ioBroker.CommonType; role: string; value?: ioBroker.StateValue; resource: HueResource; write?: boolean; unit?: string; min?: number; max?: number; states?: Record<string, string>; }
 
 /** Creates and updates the flat ioBroker device model for Hue v2 resources. */
 export class ObjectManager {
@@ -101,7 +101,10 @@ export class ObjectManager {
                 const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.adapter.setStateAsync(`${baseId}.on`, on.on, true);
                 const dimming = this.asRecord(resource.dimming); if (typeof dimming?.brightness === 'number') await this.adapter.setStateAsync(`${baseId}.dimming`, dimming.brightness, true);
                 const ct = this.asRecord(resource.color_temperature); if (typeof ct?.mirek === 'number') await this.adapter.setStateAsync(`${baseId}.color_temperature`, ct.mirek, true);
-                const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); if (typeof xy?.x === 'number' && typeof xy?.y === 'number') await this.adapter.setStateAsync(`${baseId}.color`, JSON.stringify({ x: xy.x, y: xy.y }), true); break;
+                const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); if (typeof xy?.x === 'number' && typeof xy?.y === 'number') await this.adapter.setStateAsync(`${baseId}.color`, JSON.stringify({ x: xy.x, y: xy.y }), true);
+                const effects = this.asRecord(resource.effects); if (typeof effects?.status === 'string') await this.adapter.setStateAsync(`${baseId}.effect`, effects.status, true);
+                const timedEffects = this.asRecord(resource.timed_effects); if (typeof timedEffects?.status === 'string') await this.adapter.setStateAsync(`${baseId}.timed_effect`, timedEffects.status, true);
+                break;
             }
             case 'motion': { const v = this.asRecord(resource.motion); if (typeof v?.motion === 'boolean') await this.adapter.setStateAsync(`${baseId}.motion`, v.motion, true); break; }
             case 'temperature': { const v = this.asRecord(resource.temperature); if (typeof v?.temperature === 'number') await this.adapter.setStateAsync(`${baseId}.temperature`, v.temperature, true); break; }
@@ -127,6 +130,12 @@ export class ObjectManager {
             await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: typeof ct?.mirek === 'number' ? ct.mirek : undefined, unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true });
         }
         if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? JSON.stringify({ x: xy.x, y: xy.y }) : '', resource, write: true }); }
+        const effects = this.asRecord(resource.effects);
+        const effectValues = this.asStringArray(effects?.effect_values);
+        if (effectValues.length > 0) await this.createState(`${baseId}.effect`, { name: 'Effect', type: 'string', role: 'level', value: this.asString(effects?.status) ?? 'no_effect', resource, write: true, states: Object.fromEntries(effectValues.map(value => [value, value])) });
+        const timedEffects = this.asRecord(resource.timed_effects);
+        const timedEffectValues = this.asStringArray(timedEffects?.effect_values);
+        if (timedEffectValues.length > 0) await this.createState(`${baseId}.timed_effect`, { name: 'Timed effect', type: 'string', role: 'level', value: this.asString(timedEffects?.status) ?? 'no_effect', resource, write: true, states: Object.fromEntries(timedEffectValues.map(value => [value, value])) });
     }
 
     private async updateAllEntertainmentStates(resources: ResourceManager, createObjects: boolean): Promise<void> { for (const device of resources.getDevices()) await this.updateEntertainmentStateForDevice(resources, device, createObjects); }
@@ -170,7 +179,7 @@ export class ObjectManager {
         return this.asString(button?.last_event);
     }
 
-    private async createState(id: string, d: StateDefinition, nativeExtra: Record<string, unknown> = {}): Promise<void> { const common: ioBroker.StateCommon = { name: d.name, type: d.type, role: d.role, read: true, write: d.write ?? false }; if (d.unit !== undefined) common.unit = d.unit; if (d.min !== undefined) common.min = d.min; if (d.max !== undefined) common.max = d.max; await this.adapter.extendObjectAsync(id, { type: 'state', common, native: { hueResourceId: d.resource.id, hueResourceType: d.resource.type, idV1: d.resource.id_v1, ...nativeExtra } }); if (d.value !== undefined) await this.adapter.setStateAsync(id, d.value, true); }
+    private async createState(id: string, d: StateDefinition, nativeExtra: Record<string, unknown> = {}): Promise<void> { const common: ioBroker.StateCommon = { name: d.name, type: d.type, role: d.role, read: true, write: d.write ?? false }; if (d.unit !== undefined) common.unit = d.unit; if (d.min !== undefined) common.min = d.min; if (d.max !== undefined) common.max = d.max; if (d.states !== undefined) common.states = d.states; await this.adapter.extendObjectAsync(id, { type: 'state', common, native: { hueResourceId: d.resource.id, hueResourceType: d.resource.type, idV1: d.resource.id_v1, ...nativeExtra } }); if (d.value !== undefined) await this.adapter.setStateAsync(id, d.value, true); }
     private async createOptionalInfoState(id: string, name: string, value: string | undefined): Promise<void> { if (value !== undefined) await this.createInfoState(id, name, value); }
     private async createInfoState(id: string, name: string, value: string): Promise<void> { await this.adapter.extendObjectAsync(id, { type: 'state', common: { name, type: 'string', role: 'text', read: true, write: false }, native: {} }); await this.adapter.setStateAsync(id, value, true); }
     private getDeviceIcon(modelId: string | undefined): string | undefined {
