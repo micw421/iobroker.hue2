@@ -109,6 +109,7 @@ class Hue2 extends utils.Adapter {
             },
             onError: error => this.log.warn(`Hue event stream: ${error.message}`),
             onUpdate: update => this.handleResourceUpdate(update),
+            onAdd: added => this.handleResourceAdd(added),
             onDelete: deleted => this.handleResourceDelete(deleted),
         });
     }
@@ -124,7 +125,7 @@ class Hue2 extends utils.Adapter {
         await this.resyncResources('reconnect');
     }
 
-    private async resyncResources(reason: 'reconnect' | 'delete'): Promise<void> {
+    private async resyncResources(reason: 'reconnect' | 'add' | 'delete'): Promise<void> {
         try {
             if (!this.client || !this.resources) return;
             const config = this.config as Hue2Config;
@@ -152,6 +153,11 @@ class Hue2 extends utils.Adapter {
         }
     }
 
+    private async handleResourceAdd(added: HueResource): Promise<void> {
+        if (this.reconnectSync) await this.reconnectSync;
+        this.log.debug(`Hue event add ${added.type}: ${added.id}; resynchronizing resources`);
+        await this.resyncResources('add');
+    }
     private async handleResourceDelete(deleted: HueResource): Promise<void> {
         if (this.reconnectSync) await this.reconnectSync;
         this.log.debug(`Hue event delete ${deleted.type}: ${deleted.id}; resynchronizing resources`);
