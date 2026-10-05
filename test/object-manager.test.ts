@@ -229,4 +229,28 @@ describe('ObjectManager identify', () => {
 
         expect(objects.has('devices.device-1.identify')).toBe(false);
     });
+    it('creates writable effect states and updates their status from events', async () => {
+        const { adapter, objects, states } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({ id: 'device-1', type: 'device', metadata: { name: 'Spot' }, services: [{ rid: 'light-1', rtype: 'light' }] }),
+            resource({
+                id: 'light-1', type: 'light', on: { on: true },
+                effects: { status: 'no_effect', effect_values: ['no_effect', 'candle', 'sparkle', 'glisten'] },
+                timed_effects: { status: 'no_effect', effect_values: ['no_effect', 'sunrise', 'sunset'] },
+            }),
+        ]);
+
+        const manager = new ObjectManager(adapter);
+        await manager.syncDevices(resources);
+
+        expect(objects.get('devices.device-1.effect')?.common.states).toEqual({ no_effect: 'no_effect', candle: 'candle', sparkle: 'sparkle', glisten: 'glisten' });
+        expect(objects.get('devices.device-1.effect')?.common.write).toBe(true);
+        expect(objects.get('devices.device-1.timed_effect')?.common.states).toEqual({ no_effect: 'no_effect', sunrise: 'sunrise', sunset: 'sunset' });
+        expect(states.get('devices.device-1.effect')).toBe('no_effect');
+
+        const update = resources.patch(resource({ id: 'light-1', type: 'light', effects: { status: 'candle' } }));
+        await manager.updateResource(resources, update);
+        expect(states.get('devices.device-1.effect')).toBe('candle');
+    });
+
 });
