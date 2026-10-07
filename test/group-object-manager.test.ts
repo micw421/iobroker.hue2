@@ -271,6 +271,28 @@ describe('GroupObjectManager', () => {
         expect(states.get('rooms.room-1.all_on')).toBe(false);
     });
 
+    it('exposes grouped-light color as a compact x,y string when Hue provides it', async () => {
+        const { adapter, states } = createAdapterMock();
+        const resources = createGroupResources('room', true);
+        resources.patch(resource({
+            id: 'grouped-light-1',
+            type: 'grouped_light',
+            color: { xy: { x: 0.31, y: 0.42 } },
+        }));
+
+        const manager = new GroupObjectManager(adapter);
+        await manager.sync(resources);
+        expect(states.get('rooms.room-1.color')).toBe('0.31,0.42');
+
+        const update = resources.patch(resource({
+            id: 'grouped-light-1',
+            type: 'grouped_light',
+            color: { xy: { x: 0.2, y: 0.3 } },
+        }));
+        await manager.updateResource(resources, update);
+        expect(states.get('rooms.room-1.color')).toBe('0.2,0.3');
+    });
+
     it('derives a shared color-temperature range from all member lights', async () => {
         const { adapter, objects } = createAdapterMock();
         const resources = new ResourceManager([
