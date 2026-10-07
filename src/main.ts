@@ -352,7 +352,10 @@ class Hue2 extends utils.Adapter {
 
     private async writeEffect(native: Record<string, unknown>, value: ioBroker.StateValue, property: 'effects' | 'timed_effects'): Promise<void> {
         if (typeof value !== 'string' || value.length === 0) throw new Error(`${property} must be a non-empty string`);
-        await this.writeSingleResource(native, { [property]: { action: value } });
+        const payload = property === 'effects'
+            ? { effects: { effect: value } }
+            : { timed_effects: { action: value } };
+        await this.writeSingleResource(native, payload);
     }
 
     private requireBoolean(value: ioBroker.StateValue, property: string): boolean { if (typeof value !== 'boolean') throw new Error(`${property} must be boolean`); return value; }
