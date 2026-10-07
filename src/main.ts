@@ -341,13 +341,14 @@ class Hue2 extends utils.Adapter {
     }
 
     private async writeColor(native: Record<string, unknown>, value: ioBroker.StateValue): Promise<void> {
-        if (typeof value !== 'string') throw new Error('color must be a JSON string with x and y');
-        let parsed: unknown;
-        try { parsed = JSON.parse(value); } catch { throw new Error('color must be valid JSON'); }
-        const xy = this.asRecord(parsed);
-        if (typeof xy?.x !== 'number' || typeof xy?.y !== 'number') throw new Error('color must contain numeric x and y values');
-        if (xy.x < 0 || xy.x > 1 || xy.y < 0 || xy.y > 1) throw new Error('color x and y must be between 0 and 1');
-        await this.writeSingleResource(native, { color: { xy: { x: xy.x, y: xy.y } } });
+        if (typeof value !== 'string') throw new Error('color must be a string in the form x,y');
+        const parts = value.split(',').map(part => part.trim());
+        if (parts.length !== 2 || parts.some(part => part.length === 0)) throw new Error('color must be in the form x,y');
+        const x = Number(parts[0]);
+        const y = Number(parts[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('color x and y must be numbers');
+        if (x < 0 || x > 1 || y < 0 || y > 1) throw new Error('color x and y must be between 0 and 1');
+        await this.writeSingleResource(native, { color: { xy: { x, y } } });
     }
 
     private async writeEffect(native: Record<string, unknown>, value: ioBroker.StateValue, property: 'effects' | 'timed_effects'): Promise<void> {
