@@ -73,6 +73,20 @@ info.*
 
 Not every state is created for every device. For example, `color` is only available for lights that expose Hue color support.
 
+The `color` state uses a compact Hue xy string instead of JSON:
+
+```text
+0.1935,0.6823
+```
+
+Write it in the same form:
+
+```javascript
+setState('hue2.0.devices.<device UUID>.color', '0.1935,0.6823');
+```
+
+Internally the adapter converts this to the Hue API v2 `color.xy` object. Both coordinates must be numeric values between 0 and 1.
+
 Hue button services are exposed directly below the physical device using their Hue `metadata.control_id`:
 
 ```text
