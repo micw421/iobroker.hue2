@@ -229,6 +229,35 @@ describe('ObjectManager identify', () => {
 
         expect(objects.has('devices.device-1.identify')).toBe(false);
     });
+    it('exposes light color as a compact x,y string', async () => {
+        const { adapter, states } = createAdapterMock();
+        const resources = new ResourceManager([
+            resource({
+                id: 'device-1',
+                type: 'device',
+                metadata: { name: 'Color light' },
+                services: [{ rid: 'light-1', rtype: 'light' }],
+            }),
+            resource({
+                id: 'light-1',
+                type: 'light',
+                color: { xy: { x: 0.1935, y: 0.6823 } },
+            }),
+        ]);
+
+        const manager = new ObjectManager(adapter);
+        await manager.syncDevices(resources);
+        expect(states.get('devices.device-1.color')).toBe('0.1935,0.6823');
+
+        const update = resources.patch(resource({
+            id: 'light-1',
+            type: 'light',
+            color: { xy: { x: 0.5798, y: 0.3922 } },
+        }));
+        await manager.updateResource(resources, update);
+        expect(states.get('devices.device-1.color')).toBe('0.5798,0.3922');
+    });
+
     it('creates writable effect states and updates their status from events', async () => {
         const { adapter, objects, states } = createAdapterMock();
         const resources = new ResourceManager([
