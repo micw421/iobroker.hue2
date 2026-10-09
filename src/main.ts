@@ -13,6 +13,7 @@ interface Hue2Config extends ioBroker.AdapterConfig {
     applicationKey: string;
     dimmingControlsPower?: boolean;
     createIoBrokerRooms?: boolean;
+    createIoBrokerFunctions?: boolean;
     createLightStates?: boolean;
 }
 
@@ -53,6 +54,7 @@ class Hue2 extends utils.Adapter {
             await this.objectManager.syncDevices(this.resources);
             await this.groupObjectManager.sync(this.resources, {
                 createIoBrokerRooms: config.createIoBrokerRooms === true,
+                createIoBrokerFunctions: config.createIoBrokerFunctions === true,
                 createLightStates: config.createLightStates === true,
             });
             await this.entertainmentObjectManager.sync(this.resources, {
@@ -136,6 +138,7 @@ class Hue2 extends utils.Adapter {
                     { sync: resources => this.objectManager.syncDevices(resources) },
                     { sync: resources => this.groupObjectManager.sync(resources, {
                         createIoBrokerRooms: config.createIoBrokerRooms === true,
+                createIoBrokerFunctions: config.createIoBrokerFunctions === true,
                         createLightStates: config.createLightStates === true,
                     }) },
                     { sync: resources => this.entertainmentObjectManager.sync(resources, {
