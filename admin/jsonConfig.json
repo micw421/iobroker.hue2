@@ -25,6 +25,12 @@
       "help": "Mirror Hue rooms to ioBroker enum.rooms and assign the contained Hue devices.",
       "newLine": true
     },
+    "createIoBrokerFunctions": {
+      "type": "checkbox",
+      "label": "Create ioBroker functions",
+      "help": "Assign Hue devices and relevant states to ioBroker function enums for Lovelace.",
+      "newLine": true
+    },
     "createLightStates": {
       "type": "checkbox",
       "label": "Create light membership states",
