@@ -202,7 +202,7 @@ export class GroupObjectManager {
             }
             await this.adapter.setForeignObjectAsync(enumId, {
                 type: 'enum',
-                common: { ...(existing?.common ?? { name: definition.name }), members: [...new Set([...preserved, ...managed])] },
+                common: { name: existing?.type === 'enum' ? existing.common.name : definition.name, members: [...new Set([...preserved, ...managed])] },
                 native: { ...(existing?.native ?? {}), hue2Created: (existing?.native as Record<string, unknown> | undefined)?.hue2Created === true || !existing, hue2ManagedMembers: managed },
             });
         }
