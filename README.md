@@ -373,6 +373,7 @@ The adapter expects the Hue Bridge address and Hue application key in the instan
 - `applicationKey`
 - `dimmingControlsPower` (default: `false`): if enabled, writing `dimming > 0` also turns the light or group on. Writing `dimming = 0` turns it off. With this option disabled, `dimming` only changes brightness and does not implicitly change the power state.
 - `createIoBrokerRooms` (default: `false`): mirror Hue rooms into `enum.rooms` and assign the contained Hue devices.
+- `createIoBrokerFunctions` (default: `false`): assign Hue devices and relevant states to standard `enum.functions` categories (light, motion, temperature, illuminance, button, battery). Existing manual members are preserved.
 - `createLightStates` (default: `false`): create `rooms/zones/entertainment.<uuid>.lights.*` membership states.
 
 The `dimmingControlsPower` option only affects direct writes to the `dimming` state. Raw JSON written to `command` is sent as specified and is not modified by this option.
