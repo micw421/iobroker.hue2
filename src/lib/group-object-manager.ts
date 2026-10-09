@@ -6,6 +6,7 @@ interface ColorTemperatureRange { min?: number; max?: number; }
 
 export interface GroupSyncOptions {
     createIoBrokerRooms?: boolean;
+    createIoBrokerFunctions?: boolean;
     createLightStates?: boolean;
 }
 
@@ -20,6 +21,7 @@ export class GroupObjectManager {
         await this.syncGroupedContainerType('zone', 'zones', 'Hue zones', resources, options.createLightStates === true);
         if (options.createIoBrokerRooms === true) await this.syncIoBrokerRooms(resources);
         else await this.removeManagedIoBrokerRooms();
+        await this.syncIoBrokerFunctions(resources, options.createIoBrokerFunctions === true);
     }
 
     public async updateResource(resources: ResourceManager, resource: HueResource): Promise<void> {
@@ -145,6 +147,65 @@ export class GroupObjectManager {
             await this.adapter.setStateAsync(`${baseId}.lights.${deviceId}`, name, true);
         }
         await this.removeObsoleteLightObjects(baseId, new Set(deviceIds));
+    }
+
+    private async syncIoBrokerFunctions(resources: ResourceManager, enabled: boolean): Promise<void> {
+        const definitions: Record<string, { name: string; services: string[]; states: string[] }> = {
+            light: { name: 'Light', services: ['light'], states: ['on', 'dimming', 'color', 'color_temperature'] },
+            motion: { name: 'Motion', services: ['motion'], states: ['motion'] },
+            temperature: { name: 'Temperature', services: ['temperature'], states: ['temperature'] },
+            illuminance: { name: 'Illuminance', services: ['light_level'], states: ['light_level'] },
+            button: { name: 'Button', services: ['button'], states: [] },
+            battery: { name: 'Battery', services: ['device_power'], states: ['battery_level', 'battery_state'] },
+        };
+        for (const [key, definition] of Object.entries(definitions)) {
+            const enumId = `enum.functions.${key}`;
+            const existing = await this.adapter.getForeignObjectAsync(enumId);
+            const existingMembers = existing?.type === 'enum' && Array.isArray(existing.common.members)
+                ? existing.common.members.filter((member): member is string => typeof member === 'string')
+                : [];
+            const previousManaged = existing?.native && Array.isArray((existing.native as Record<string, unknown>).hue2ManagedMembers)
+                ? ((existing.native as Record<string, unknown>).hue2ManagedMembers as unknown[]).filter((member): member is string => typeof member === 'string')
+                : [];
+            const preserved = existingMembers.filter(member => !previousManaged.includes(member));
+            const members: string[] = [];
+            if (enabled) {
+                for (const device of resources.getDevices()) {
+                    const services = resources.getDeviceServices(device);
+                    if (!services.some(service => definition.services.includes(service.type))) continue;
+                    const base = `${this.adapter.namespace}.devices.${device.id}`;
+                    members.push(base);
+                    if (key === 'button') {
+                        for (const service of services.filter(service => service.type === 'button')) {
+                            const controlId = (service.metadata as Record<string, unknown> | undefined)?.control_id;
+                            if (typeof controlId === 'string' || typeof controlId === 'number') members.push(`${base}.button_${controlId}`);
+                        }
+                    } else members.push(...definition.states.map(state => `${base}.${state}`));
+                }
+                if (key === 'light') {
+                    for (const [type, root] of [['room', 'rooms'], ['zone', 'zones']] as const) {
+                        for (const group of resources.getByType(type)) {
+                            const services = this.getServiceReferences(group);
+                            if (!services.some(service => service.rtype === 'grouped_light')) continue;
+                            const base = `${this.adapter.namespace}.${root}.${group.id}`;
+                            members.push(base, ...definition.states.map(state => `${base}.${state}`));
+                        }
+                    }
+                }
+            }
+            const managed = [...new Set(members)];
+            if (!enabled && !previousManaged.length) continue;
+            if (!existing && !managed.length) continue;
+            if (!enabled && existing?.native && (existing.native as Record<string, unknown>).hue2Created === true && preserved.length === 0) {
+                await this.adapter.delForeignObjectAsync(enumId);
+                continue;
+            }
+            await this.adapter.setForeignObjectAsync(enumId, {
+                type: 'enum',
+                common: { ...(existing?.common ?? { name: definition.name }), members: [...new Set([...preserved, ...managed])] },
+                native: { ...(existing?.native ?? {}), hue2Created: (existing?.native as Record<string, unknown> | undefined)?.hue2Created === true || !existing, hue2ManagedMembers: managed },
+            });
+        }
     }
 
     private async syncIoBrokerRooms(resources: ResourceManager): Promise<void> {
