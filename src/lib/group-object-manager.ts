@@ -200,11 +200,12 @@ export class GroupObjectManager {
                 await this.adapter.delForeignObjectAsync(enumId);
                 continue;
             }
-            await this.adapter.setForeignObjectAsync(enumId, {
+            const enumObject: { type: 'enum'; common: ioBroker.EnumCommon; native: Record<string, unknown> } = {
                 type: 'enum',
                 common: { name: existing?.type === 'enum' ? existing.common.name : definition.name, members: [...new Set([...preserved, ...managed])] },
                 native: { ...(existing?.native ?? {}), hue2Created: (existing?.native as Record<string, unknown> | undefined)?.hue2Created === true || !existing, hue2ManagedMembers: managed },
-            });
+            };
+            await this.adapter.setForeignObjectAsync(enumId, enumObject);
         }
     }
 
