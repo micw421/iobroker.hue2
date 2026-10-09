@@ -123,13 +123,13 @@ export class ObjectManager {
     private async updateEnabledState(baseId: string, services: HueResource[]): Promise<void> { const enabled = services.filter(s => typeof s.enabled === 'boolean'); if (enabled.length) await this.adapter.setStateAsync(`${baseId}.enabled`, enabled.every(s => s.enabled === true), true); }
 
     private async syncLightStates(baseId: string, resource: HueResource): Promise<void> {
-        const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
+        const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch.light', value: on.on, resource, write: true });
         const dimming = this.asRecord(resource.dimming); if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
         if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) {
             const ct = this.asRecord(resource.color_temperature); const schema = this.asRecord(ct?.mirek_schema);
             await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: typeof ct?.mirek === 'number' ? ct.mirek : undefined, unit: 'mired', min: this.asNumber(schema?.mirek_minimum), max: this.asNumber(schema?.mirek_maximum), resource, write: true });
         }
-        if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? `${xy.x},${xy.y}` : '', resource, write: true }); }
+        if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'level.color.cie', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? `${xy.x},${xy.y}` : '', resource, write: true }); }
         const effects = this.asRecord(resource.effects);
         const effectValues = this.asStringArray(effects?.effect_values);
         if (effectValues.length > 0) await this.createState(`${baseId}.effect`, { name: 'Effect', type: 'string', role: 'level', value: this.asString(effects?.status) ?? 'no_effect', resource, write: true, states: Object.fromEntries(effectValues.map(value => [value, value])) });
