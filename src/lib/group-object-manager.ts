@@ -339,10 +339,10 @@ export class GroupObjectManager {
     }
 
     private async syncGroupedLightStates(baseId: string, resource: HueResource, derivedRange: ColorTemperatureRange): Promise<void> {
-        const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch', value: on.on, resource, write: true });
+        const on = this.asRecord(resource.on); if (typeof on?.on === 'boolean') await this.createState(`${baseId}.on`, { name: 'On', type: 'boolean', role: 'switch.light', value: on.on, resource, write: true });
         const dimming = this.asRecord(resource.dimming); if (typeof dimming?.brightness === 'number') await this.createState(`${baseId}.dimming`, { name: 'Dimming', type: 'number', role: 'level.dimmer', value: dimming.brightness, unit: '%', min: 0, max: 100, resource, write: true });
         if (Object.prototype.hasOwnProperty.call(resource, 'color_temperature')) { const colorTemperature = this.asRecord(resource.color_temperature); const schema = this.asRecord(colorTemperature?.mirek_schema); await this.createState(`${baseId}.color_temperature`, { name: 'Color temperature', type: 'number', role: 'level.color.temperature', value: typeof colorTemperature?.mirek === 'number' ? colorTemperature.mirek : undefined, unit: 'mired', min: this.asNumber(schema?.mirek_minimum) ?? derivedRange.min, max: this.asNumber(schema?.mirek_maximum) ?? derivedRange.max, resource, write: true }); }
-        if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'text', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? `${xy.x},${xy.y}` : '', resource, write: true }); }
+        if (Object.prototype.hasOwnProperty.call(resource, 'color')) { const color = this.asRecord(resource.color); const xy = this.asRecord(color?.xy); await this.createState(`${baseId}.color`, { name: 'Color', type: 'string', role: 'level.color.cie', value: typeof xy?.x === 'number' && typeof xy?.y === 'number' ? `${xy.x},${xy.y}` : '', resource, write: true }); }
     }
 
     private async updateGroupedLightValues(baseId: string, resource: HueResource): Promise<void> {
